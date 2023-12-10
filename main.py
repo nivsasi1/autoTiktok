@@ -77,5 +77,5 @@ def getAudioLength(fileName: str):
         duration = frames / float(rate)
         return duration 
 
-# main()
-exportVideo()
+main()
+# exportVideo()

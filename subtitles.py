@@ -23,13 +23,14 @@ def makeSubtitles(file_path):
         line = file.readline()
         if not line:
             break
+        line = line.replace(".", ". ")
         words = line.split(" ")
         duration = 0
         word_count = 0
         content = ''
         DOT_BREAK = 0.21
         for (index, word) in enumerate(words):
-            word.replace("'","")
+            # word.replace("'","")
             word_count += 1
             word_duration = calculateWordDuration(word)
             duration += word_duration
