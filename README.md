@@ -21,7 +21,8 @@ https://github.com/BtbN/FFmpeg-Builds/releases
 ### How to use?
 make sure you have the following files in the project directory:
 * video file - vid.mp4
-  
+https://www.youtube.com/watch?v=Pt5_GSKIWQM (10min Minecraft parkour with no copyright)
+
 run the command
 ```
 python3 ./main.py
