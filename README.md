@@ -17,6 +17,12 @@ pip3 install -f 'https://synesthesiam.github.io/prebuilt-apps/' -f 'https://down
 https://github.com/BtbN/FFmpeg-Builds/releases
 ```
 
+## python dependencies
+```
+pip3 install requests
+pip3 install wave
+```
+
 -------------
 ### How to use?
 make sure you have the following files in the project directory:
