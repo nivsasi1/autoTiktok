@@ -18,8 +18,19 @@ https://github.com/BtbN/FFmpeg-Builds/releases
 ```
 
 -------------
-#How to use?
+## How to use?
+make sure you have the following files in the project directory:
+* video file - vid.mp4
+  
 run the command
 ```
 python3 ./main.py
 ```
+
+The program generates 3 files:
+1. voice audio file - outputw.wav
+2. subtitles file - subtitles.srt
+3. video file - out.mp4
+
+**do not delete any of these files in the proccess**
+
