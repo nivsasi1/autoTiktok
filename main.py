@@ -16,6 +16,7 @@ AUDIO_FILE_PATH = "outputw.wav"
 SUBTITLES_FILE_PATH = "subtitles.srt"
 TRANSCRIPT_FILE_PATH = "transcript.srt"
 INPUT_VID_FILE_PATH = "vid.mp4"
+OUTPUT_VID_FILE_PATH = "out.mp4"
 
 def main():
     js = getRedditPost(0, 1) 
@@ -54,7 +55,7 @@ def exportVideo():
                     '1000k',
                     '-map',
                     '1',
-                    'out3.mp4'
+                    OUTPUT_VID_FILE_PATH
                      ])
 
 def getRedditPost(index: int, amount: int):
