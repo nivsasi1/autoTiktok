@@ -11,7 +11,7 @@ def qualifies(entry, used_ids) -> bool:
     return (entry.kind == "t3"
             and entry.id not in used_ids
             and entry.author.lower() != "/u/automoderator"
-            and "nsfw" not in title[:16])
+            and "nsfw" not in title)   # tag can appear anywhere in the title
 
 
 def build_script(title: str, body: str, outro: str) -> str:
