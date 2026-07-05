@@ -638,6 +638,46 @@ def test_usable_comment_filters():
     assert not usable_comment(centry(html="   "))
 
 
+def test_fetch_walks_posts_and_assembles_story(monkeypatch):
+    import config
+    from sources import askreddit
+
+    def post(pid, author="/u/asker"):
+        return SimpleNamespace(id=pid, kind="t3", author=author,
+                               title=f"Question {pid}",
+                               link=f"https://reddit/{pid}/", html="")
+
+    good_answer = "<p>" + "a decent answer to the question here. " * 2 + "</p>"
+    calls = []
+
+    def fake_fetch(url):
+        calls.append(url)
+        if "hot.rss" in url:
+            return [post("used1"), post("auto1", author="/u/AutoModerator"),
+                    post("thin1"), post("good1")]
+        if "/thin1/" in url:                    # 1 usable answer -> fall through
+            return [centry(id="c0", html=good_answer)]
+        if "/good1/" in url:                    # post itself first, then answers
+            return [SimpleNamespace(id="good1", kind="t3", author="/u/asker",
+                                    title="", link="", html="post body")] + [
+                centry(id=f"c{i}", html=good_answer) for i in range(5)]
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(askreddit, "fetch_entries", fake_fetch)
+    preset = config.NICHES["askreddit"]
+    story = askreddit.AskRedditSource(preset, used_ids={"used1"}).fetch()
+
+    assert story.id == "good1" and story.niche == "askreddit"
+    assert story.url == "https://reddit/good1/"
+    assert story.text.startswith("Question good1?")   # bare title got "?"
+    assert "Number 1." in story.text and "Number 3." in story.text
+    assert story.text.endswith(preset.outro)
+    # listing once; comments fetched ONLY for thin1 (rejected) and good1
+    assert calls[0].endswith("hot.rss?limit=25")
+    assert calls[1:] == ["https://reddit/thin1/.rss?limit=25",
+                         "https://reddit/good1/.rss?limit=25"]
+
+
 def test_build_script_numbers_answers():
     s = build_script("Weirdest thing seen at night?",
                      ["A fox in a hat.", "Nothing, ever."], "Comment below.")
