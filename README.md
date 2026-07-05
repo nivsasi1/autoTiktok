@@ -1,43 +1,59 @@
 # autoTiktok
-auto pulling story, making audio, then adding on a minecraft video with subtitles, and uploading to tiktok automatically
 
-## larynx installation
+Reddit story → TTS narration → vertical video with perfectly-synced captions,
+ready for TikTok. Three built-in niches: **drama** (AITA, revenge, TIFU),
+**horror** (nosleep & co., word-pop captions), **askreddit** (question + top
+answers).
+
+## Setup
+
+1. **Python deps** (3.10+):
+   ```
+   pip install -r requirements.txt
+   ```
+2. **ffmpeg** (includes ffprobe):
+   ```
+   winget install Gyan.FFmpeg
+   ```
+   (new terminal afterwards so PATH refreshes)
+3. **(Optional) User-Agent** — no credentials needed; Reddit's public JSON
+   endpoints just want a descriptive UA. The default works, but to set your own:
+   ```
+   copy .env.example .env    # REDDIT_USER_AGENT=autoTiktok/1.0 by u/<you>
+   ```
+4. **Background clip** — save a gameplay video as `vid.mp4` in the repo root
+   (e.g. https://www.youtube.com/watch?v=Pt5_GSKIWQM — 10 min no-copyright
+   Minecraft parkour). Longer clip = more variety, since every render starts
+   at a random offset.
+
+## Usage
+
 ```
-python3 -m venv larynx_venv
-source larynx_venv/bin/activate
-
-pip3 install --upgrade pip
-pip3 install --upgrade wheel setuptools
-
-pip3 install -f 'https://synesthesiam.github.io/prebuilt-apps/' -f 'https://download.pytorch.org/whl/cpu/torch_stable.html' larynx
+python main.py                      # default niche (drama)
+python main.py --niche horror
+python main.py --niche askreddit
 ```
 
-## ffmpeg installation
+Output: `out.mp4` (1080x1920, captions burned in). Artifacts `output.mp3` /
+`subtitles.srt` are left behind for inspection; `state.json` remembers used
+posts so you never render the same story twice.
+
+Niche presets (subreddits, voice, words-per-caption, outro) live in
+`config.py` — edit them freely.
+
+## Tests
+
 ```
-https://github.com/BtbN/FFmpeg-Builds/releases
+python -m pytest tests/ -v
 ```
 
-## python dependencies
-```
-pip3 install requests
-pip3 install wave
-```
+## Roadmap
 
--------------
-### How to use?
-make sure you have the following files in the project directory:
-* video file - vid.mp4
-https://www.youtube.com/watch?v=Pt5_GSKIWQM (10min Minecraft parkour with no copyright)
+- Phase B: TikTok auto-upload + scheduler
+- Phase C: GUI (run button, paste-a-URL, freeform text, preview)
+- Phase D: virality pack (AI stories, multi-part series, hook overlays)
+- Official Reddit API (PRAW) swap-in behind ContentSource, once the API
+  application is approved
 
-run the command
-```
-python3 ./main.py
-```
-
-The program generates 3 files:
-1. voice audio file - outputw.wav
-2. subtitles file - subtitles.srt
-3. video file - out.mp4
-
-**DO NOT delete any of these files in the proccess**
+Design docs: `docs/superpowers/specs/`, plans: `docs/superpowers/plans/`.
 
