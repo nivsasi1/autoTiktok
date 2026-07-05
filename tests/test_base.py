@@ -43,3 +43,28 @@ def test_state_survives_corrupt_file(tmp_path):
     p = tmp_path / "state.json"
     p.write_text("not json", encoding="utf-8")
     assert load_used_ids(str(p)) == set()
+
+
+def test_clean_url_in_parens_leaves_no_orphan_bracket():
+    assert clean_text("Check this out(https://x.com/a).", 500) == "Check this out."
+
+
+def test_clean_url_keeps_sentence_period():
+    assert clean_text("Visit https://x.com/a.", 500) == "Visit."
+
+
+def test_clean_url_with_trailing_comma():
+    assert clean_text("Great link: https://x.com/a, right?", 500) == "Great link: right?"
+
+
+def test_clean_nested_markdown_link():
+    assert clean_text("See [my [nested] post](https://x.com/a) now", 500) == "See my nested post now"
+
+
+def test_clean_unescapes_apostrophe_entity():
+    assert clean_text("It&#39;s fine", 500) == "It's fine"
+
+
+def test_truncate_without_spaces_keeps_full_cut():
+    out = clean_text("word" * 20, 10)
+    assert out == "wordwordwo"

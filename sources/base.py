@@ -1,3 +1,4 @@
+import html
 import json
 import re
 from abc import ABC, abstractmethod
@@ -7,9 +8,10 @@ import praw
 
 import config
 
-_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_URL = re.compile(r"https?://\S+")
-_MD_NOISE = re.compile(r"[*_~^#>|`]")
+# Lazy URL match with a lookahead: stops before trailing punctuation instead
+# of swallowing it, so "https://x.com/a." keeps its sentence-ending period.
+_URL = re.compile(r"https?://\S+?(?=[.,;:!?)\]]*(?:\s|$))")
+_MD_NOISE = re.compile(r"[*_~^#>|`\[\]]")
 
 
 @dataclass
@@ -28,16 +30,31 @@ class ContentSource(ABC):
 
 
 def clean_text(raw: str, max_chars: int) -> str:
-    text = _MD_LINK.sub(r"\1", raw)
+    # Unescape first so downstream steps see plain chars (handles &#39;, &gt;,
+    # &amp; etc.); the zero-width space doesn't match \s so replace it too.
+    text = html.unescape(raw)
+    text = text.replace("​", " ")
+    # Drop markdown link URLs but keep the (possibly nested-bracket) label
+    # text, e.g. "[my [nested] post](url)" -> "[my [nested] post]". The
+    # leftover brackets get stripped by the noise class below — this sidesteps
+    # matching nested brackets with regex entirely.
+    text = re.sub(r"\]\([^)]*\)", "]", text)
     text = _URL.sub("", text)
-    text = text.replace("&amp;", "and").replace("&#x200B;", " ")
+    text = text.replace(" & ", " and ")
     text = _MD_NOISE.sub("", text)
+    text = re.sub(r"\(\s*\)", "", text)  # leftover empty parens from a stripped URL
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)  # "out ." -> "out."
+    text = re.sub(r"([.,;:!?])[.,;:!?]+", r"\1", text)  # ".," runs -> "."
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) > max_chars:
         cut = text[:max_chars]
         dot = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
         # only take the sentence cut if it keeps a decent chunk
-        text = cut[: dot + 1] if dot > max_chars // 2 else cut[: cut.rfind(" ")]
+        if dot > max_chars // 2:
+            text = cut[: dot + 1]
+        else:
+            idx = cut.rfind(" ")
+            text = cut[:idx] if idx > 0 else cut  # no space found: keep full cut
     return text.strip()
 
 
