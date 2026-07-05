@@ -1318,6 +1318,15 @@ def test_html_to_text_keeps_prose_mentioning_submitted_by():
     assert out == "I saw a post submitted by /u/foo yesterday. It got worse."
 
 
+def test_html_to_text_compound_prose_and_real_trailer():
+    from sources.base import html_to_text
+    frag = ("<p>I saw a post submitted by /u/foo earlier. The drama grew.</p> "
+            "submitted by <a>/u/writer</a> <span>[link]</span> "
+            "<span>[comments]</span>")
+    out = " ".join(html_to_text(frag).split())
+    assert out == "I saw a post submitted by /u/foo earlier. The drama grew."
+
+
 def test_fetch_entries_raises_on_non_xml(monkeypatch):
     from sources import base
     monkeypatch.setattr(base, "fetch_text", lambda url: "<html>unclosed")
@@ -1337,10 +1346,11 @@ def test_fetch_entries_raises_on_html_page(monkeypatch):
 
 ```python
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-# anchor on the [link]/[comments] terminals so prose that merely says
+# the real feed trailer is exactly "submitted by /u/<name> [link] [comments]"
+# at the end — requiring the immediate terminals means prose that merely says
 # "submitted by /u/xxx" mid-story is never eaten
-_TRAILER = re.compile(r"submitted by\s+/u/\S+.*?\[link\].*?\[comments\]\s*$",
-                      re.IGNORECASE | re.DOTALL)
+_TRAILER = re.compile(r"\s*submitted by\s+/u/\S+\s*\[link\]\s*\[comments\]\s*$",
+                      re.IGNORECASE)
 _TAG = re.compile(r"<[^>]+>")
 
 _last_fetch = 0.0  # module-level politeness gap between Reddit hits
