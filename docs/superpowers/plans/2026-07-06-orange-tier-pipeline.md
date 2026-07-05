@@ -6,14 +6,16 @@
 
 **Architecture:** A five-stage pipeline (`source → tts → subtitles → video`, orchestrated by `main.py`) where each stage is a focused module. Content sources implement one interface (`ContentSource.fetch() -> Story | None`); niche presets (subreddits, voice, caption style, outro) are data in `config.py`. Subtitle timings come from edge-tts word-boundary events, so they cannot drift.
 
-**Tech Stack:** Python 3.14 (3.10+ required), praw, edge-tts, python-dotenv, pytest, ffmpeg/ffprobe (system binaries).
+**Tech Stack:** Python 3.14 (3.10+ required), requests (public Reddit JSON), edge-tts, python-dotenv, pytest, ffmpeg/ffprobe (system binaries).
+
+> **Rev 2 (2026-07-06):** Reddit ended self-service API key creation (Nov 2025), so PRAW is out for now. All Reddit access goes through the public JSON endpoints (`.../hot.json`, `/comments/{id}.json`) with a descriptive User-Agent via a shared `get_json` helper. Task 10 retrofits Tasks 1/3 output; Tasks 4-5 below are already written against the JSON design. PRAW returns later as a drop-in `ContentSource` swap if the API application is approved.
 
 **Spec:** `docs/superpowers/specs/2026-07-05-orange-tier-pipeline-design.md`
 
 ## Global Constraints
 
-- New dependencies limited to: `praw`, `edge-tts`, `python-dotenv`, `pytest`. **No torch, no whisper.**
-- Secrets by name only: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` live in `.env` (gitignored). Never hardcode or commit values.
+- New dependencies limited to: `requests`, `edge-tts`, `python-dotenv`, `pytest`. **No torch, no whisper, no praw (for now).**
+- No credentials required. `.env` (gitignored) optionally holds `REDDIT_USER_AGENT` — a descriptive UA string per Reddit etiquette; config provides a working default. Never hardcode or commit secrets of any kind.
 - All text file writes use `encoding="utf-8"` (Windows default cp1252 crashes on Reddit's curly quotes).
 - All artifact paths are relative to the repo root and defined once in `config.py`: `output.mp3`, `subtitles.srt`, `vid.mp4`, `out.mp4`, `state.json`.
 - Commands below are for Windows PowerShell (`python`, not `python3`).
@@ -23,7 +25,7 @@
 
 ## Prerequisites (executor must confirm with the user when reached)
 
-1. **Reddit app credentials** (Task 4+ live checks, Task 8 e2e): user creates a "script" app at https://www.reddit.com/prefs/apps → copy client ID + secret into `.env`. Unit tests do NOT need this.
+1. **No Reddit credentials needed** (rev 2): public JSON endpoints only require a User-Agent header, which config defaults. Live checks and e2e run without any `.env`.
 2. **ffmpeg** (Task 7+): not currently installed. Install via `winget install Gyan.FFmpeg` (new terminal afterwards so PATH refreshes) — ask the user before installing.
 3. **`vid.mp4`** (Task 7+): user supplies a background gameplay clip in the repo root (the README links a known no-copyright Minecraft parkour video).
 
@@ -453,7 +455,7 @@ git commit -m "add source interface, text cleaner, used-id state"
 - Test: `tests/test_reddit_text.py`
 
 **Interfaces:**
-- Consumes: `Story`, `ContentSource`, `clean_text`, `make_reddit` from `sources.base`; `config.MIN_CHARS`, `config.MAX_CHARS`; `NichePreset` fields `subreddits`, `outro`.
+- Consumes: `Story`, `ContentSource`, `clean_text`, `get_json`, `to_obj` from `sources.base` (get_json/to_obj land in Task 10, which runs before this task); `config.MIN_CHARS`, `config.MAX_CHARS`; `NichePreset` fields `subreddits`, `outro`.
 - Produces: `qualifies(post, used_ids, min_chars=config.MIN_CHARS) -> bool` (pure; `post` needs `.id/.stickied/.over_18/.selftext`); `build_script(title: str, body: str, outro: str) -> str`; `RedditTextSource(niche: str, preset, used_ids: set[str])` implementing `fetch()`. Task 8 constructs it.
 
 - [ ] **Step 1: Write the failing tests** — `tests/test_reddit_text.py` (fakes, no network)
@@ -501,7 +503,9 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'sources.reddit_text'`
 
 ```python
 import config
-from sources.base import ContentSource, Story, clean_text, make_reddit
+from sources.base import ContentSource, Story, clean_text, get_json, to_obj
+
+LISTING_URL = "https://www.reddit.com/r/{subs}/hot.json?limit=50&raw_json=1"
 
 
 def qualifies(post, used_ids, min_chars=config.MIN_CHARS) -> bool:
@@ -524,11 +528,12 @@ class RedditTextSource(ContentSource):
         self.niche = niche
         self.preset = preset
         self.used_ids = used_ids
-        self.reddit = make_reddit()
 
     def fetch(self) -> Story | None:
-        multi = self.reddit.subreddit("+".join(self.preset.subreddits))
-        for post in multi.hot(limit=50):
+        url = LISTING_URL.format(subs="+".join(self.preset.subreddits))
+        payload = get_json(url)
+        for child in payload["data"]["children"]:
+            post = to_obj(child["data"])
             if not qualifies(post, self.used_ids):
                 continue
             body = clean_text(post.selftext, config.MAX_CHARS)
@@ -550,7 +555,7 @@ class RedditTextSource(ContentSource):
 Run: `python -m pytest tests/test_reddit_text.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Live check (only if `.env` is populated — otherwise skip, unit tests cover the logic)**
+- [ ] **Step 5: Live check (needs internet only — no credentials)**
 
 Run: `python -c "import config; from sources.base import load_used_ids; from sources.reddit_text import RedditTextSource; s = RedditTextSource('drama', config.NICHES['drama'], load_used_ids(config.STATE_PATH)); st = s.fetch(); print(st.title if st else 'none qualified'); print((st.url, len(st.text)) if st else '')"`
 Expected: a real post title + URL + script length between ~500 and ~2600.
@@ -571,7 +576,7 @@ git commit -m "add reddit selftext source for drama and horror"
 - Test: `tests/test_askreddit.py`
 
 **Interfaces:**
-- Consumes: `Story`, `ContentSource`, `clean_text`, `make_reddit` from `sources.base`; `config.ASKREDDIT_*`, `config.MAX_CHARS`.
+- Consumes: `Story`, `ContentSource`, `clean_text`, `get_json`, `to_obj` from `sources.base` (get_json/to_obj land in Task 10); `config.ASKREDDIT_*`, `config.MAX_CHARS`.
 - Produces: `usable_comment(comment, min_score=config.ASKREDDIT_MIN_SCORE) -> bool` (pure; needs `.stickied/.body/.score`); `build_script(title: str, answers: list[str], outro: str, max_chars=config.MAX_CHARS) -> str` (numbers the answers, stops before overflowing); `AskRedditSource(preset, used_ids: set[str])` implementing `fetch()` with `niche="askreddit"`. Task 8 constructs it.
 
 - [ ] **Step 1: Write the failing tests** — `tests/test_askreddit.py`
@@ -626,7 +631,11 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'sources.askreddit'`
 
 ```python
 import config
-from sources.base import ContentSource, Story, clean_text, make_reddit
+from sources.base import ContentSource, Story, clean_text, get_json, to_obj
+
+LISTING_URL = "https://www.reddit.com/r/AskReddit/hot.json?limit=25&raw_json=1"
+COMMENTS_URL = ("https://www.reddit.com/comments/{post_id}.json"
+                "?sort=top&limit=100&raw_json=1")
 
 
 def usable_comment(comment, min_score=config.ASKREDDIT_MIN_SCORE) -> bool:
@@ -656,16 +665,19 @@ class AskRedditSource(ContentSource):
     def __init__(self, preset, used_ids: set[str]):
         self.preset = preset
         self.used_ids = used_ids
-        self.reddit = make_reddit()
 
     def fetch(self) -> Story | None:
-        for post in self.reddit.subreddit("AskReddit").hot(limit=25):
+        listing = get_json(LISTING_URL)
+        for child in listing["data"]["children"]:
+            post = to_obj(child["data"])
             if post.id in self.used_ids or post.stickied or post.over_18:
                 continue
-            post.comment_sort = "top"
-            post.comments.replace_more(limit=0)
+            thread = get_json(COMMENTS_URL.format(post_id=post.id))
             answers = []
-            for c in post.comments:
+            for c_child in thread[1]["data"]["children"]:
+                if c_child.get("kind") != "t1":  # skip "load more" stubs
+                    continue
+                c = to_obj(c_child["data"])
                 if not usable_comment(c):
                     continue
                 body = clean_text(c.body, config.ASKREDDIT_MAX_ANSWER_CHARS)
@@ -692,7 +704,7 @@ class AskRedditSource(ContentSource):
 Run: `python -m pytest tests/test_askreddit.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Live check (only if `.env` populated)**
+- [ ] **Step 5: Live check (needs internet only — no credentials)**
 
 Run: `python -c "import config; from sources.base import load_used_ids; from sources.askreddit import AskRedditSource; s = AskRedditSource(config.NICHES['askreddit'], load_used_ids(config.STATE_PATH)); st = s.fetch(); print(st.text[:300] if st else 'none qualified')"`
 Expected: question + "Number 1." style script excerpt.
@@ -964,7 +976,7 @@ Expected: all tests pass (subtitles 6, base 7, reddit_text 4, askreddit 4, video
 Run: `python main.py --help` → usage text with `--niche {askreddit,drama,horror}`.
 Then rename any `vid.mp4` away and run `python main.py` → clean error about the missing background clip, exit code 1 (no traceback).
 
-- [ ] **Step 4: End-to-end run (gate: `.env` populated, ffmpeg installed, real `vid.mp4` present — coordinate with the user)**
+- [ ] **Step 4: End-to-end run (gate: ffmpeg installed, real `vid.mp4` present — coordinate with the user; no credentials needed)**
 
 Run: `python main.py --niche drama`
 Expected: story title + URL printed, `out.mp4` produced; open it — narration audible, captions synced, vertical 1080x1920. Run again: a *different* story (used-ID skip working).
@@ -1005,10 +1017,10 @@ answers).
    winget install Gyan.FFmpeg
    ```
    (new terminal afterwards so PATH refreshes)
-3. **Reddit credentials** — create a free "script" app at
-   https://www.reddit.com/prefs/apps, then:
+3. **(Optional) User-Agent** — no credentials needed; Reddit's public JSON
+   endpoints just want a descriptive UA. The default works, but to set your own:
    ```
-   copy .env.example .env    # fill in the two values
+   copy .env.example .env    # REDDIT_USER_AGENT=autoTiktok/1.0 by u/<you>
    ```
 4. **Background clip** — save a gameplay video as `vid.mp4` in the repo root
    (e.g. https://www.youtube.com/watch?v=Pt5_GSKIWQM — 10 min no-copyright
@@ -1041,6 +1053,8 @@ python -m pytest tests/ -v
 - Phase B: TikTok auto-upload + scheduler
 - Phase C: GUI (run button, paste-a-URL, freeform text, preview)
 - Phase D: virality pack (AI stories, multi-part series, hook overlays)
+- Official Reddit API (PRAW) swap-in behind ContentSource, once the API
+  application is approved
 
 Design docs: `docs/superpowers/specs/`, plans: `docs/superpowers/plans/`.
 ```
@@ -1058,6 +1072,148 @@ git push
 ```
 
 - [ ] **Step 4: Open PR** — `feat/orange-tier` → `main`, title "Orange tier: pluggable sources, edge-tts, boundary subtitles", body summarizing the three engine swaps + niches, noting it supersedes PR #1's file versions.
+
+---
+
+### Task 10: Public-JSON pivot retrofit (executes between Tasks 3 and 4)
+
+Reddit ended self-service API keys (Nov 2025) — this task retires praw/make_reddit
+and gives Tasks 4/5 the `get_json`/`to_obj` helpers they consume.
+
+**Files:**
+- Modify: `requirements.txt`, `.env.example`, `config.py`, `sources/base.py`
+- Test: `tests/test_base.py` (extend)
+
+**Interfaces:**
+- Consumes: `config.REDDIT_USER_AGENT`.
+- Produces: `get_json(url: str) -> dict | list` (sends the UA header, 15s timeout,
+  3 attempts with backoff on 429/500/502/503, else `RuntimeError` whose message
+  names `REDDIT_USER_AGENT`); `to_obj(d: dict) -> SimpleNamespace` (attribute
+  access over Reddit JSON dicts, so `qualifies`/`usable_comment` fakes in Tasks
+  4/5 keep working). **Removes** `make_reddit` and the praw import entirely.
+
+- [ ] **Step 1: Write the failing tests** — append to `tests/test_base.py` (add `import pytest` if absent)
+
+```python
+class FakeResp:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def test_get_json_returns_parsed_payload(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base.requests, "get",
+                        lambda url, headers, timeout: FakeResp(200, {"ok": 1}))
+    assert base.get_json("https://x") == {"ok": 1}
+
+
+def test_get_json_sends_user_agent(monkeypatch):
+    from sources import base
+    seen = {}
+
+    def fake_get(url, headers, timeout):
+        seen.update(headers)
+        return FakeResp(200, [])
+
+    monkeypatch.setattr(base.requests, "get", fake_get)
+    base.get_json("https://x")
+    assert seen["User-Agent"]
+
+
+def test_get_json_raises_clear_error_on_403(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base.requests, "get",
+                        lambda url, headers, timeout: FakeResp(403))
+    with pytest.raises(RuntimeError, match="REDDIT_USER_AGENT"):
+        base.get_json("https://x")
+
+
+def test_get_json_retries_429_then_succeeds(monkeypatch):
+    from sources import base
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append(1)
+        return FakeResp(429) if len(calls) == 1 else FakeResp(200, {"ok": 2})
+
+    monkeypatch.setattr(base.requests, "get", fake_get)
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    assert base.get_json("https://x") == {"ok": 2}
+    assert len(calls) == 2
+
+
+def test_to_obj_gives_attribute_access():
+    from sources.base import to_obj
+    o = to_obj({"id": "x1", "over_18": False, "selftext": "hi"})
+    assert o.id == "x1" and o.over_18 is False and o.selftext == "hi"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest tests/test_base.py -v`
+Expected: 5 new tests FAIL (`AttributeError: module 'sources.base' has no attribute 'requests'` / no `get_json`); 13 existing PASS.
+
+- [ ] **Step 3: Implement the pivot**
+
+`requirements.txt`: replace the `praw~=7.8` line with `requests~=2.32`, then `pip install -r requirements.txt`.
+
+`.env.example` — replace entire content:
+
+```
+# Optional: descriptive User-Agent for Reddit's public JSON endpoints
+# (Reddit etiquette: include your reddit username)
+REDDIT_USER_AGENT=autoTiktok/1.0 by u/<your-username>
+```
+
+`config.py`: delete the `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` lines; change the UA default to
+`REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "autoTiktok/1.0 (public-json)")`.
+
+`sources/base.py`: delete `import praw` and the whole `make_reddit` function; add near the top `import time`, `from types import SimpleNamespace`, `import requests`; add:
+
+```python
+def get_json(url: str):
+    """GET a public Reddit JSON endpoint; retries transient failures."""
+    headers = {"User-Agent": config.REDDIT_USER_AGENT}
+    status = None
+    for attempt in range(3):
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()
+        status = resp.status_code
+        if status in (429, 500, 502, 503):
+            time.sleep(2 * (attempt + 1))
+            continue
+        break
+    raise RuntimeError(
+        f"Reddit request failed (HTTP {status}) for {url}. Set a descriptive "
+        "REDDIT_USER_AGENT in .env (e.g. 'autoTiktok/1.0 by u/<you>') and slow "
+        "down if it persists.")
+
+
+def to_obj(d: dict) -> SimpleNamespace:
+    return SimpleNamespace(**d)
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python -m pytest tests/ -v`
+Expected: 24 passed (6 subtitles + 18 base), zero praw imports remaining (`grep -r praw *.py sources/` finds nothing).
+
+- [ ] **Step 5: Live check (internet only, no credentials)**
+
+Run: `python -c "from sources.base import get_json; d = get_json('https://www.reddit.com/r/stories/hot.json?limit=5&raw_json=1'); print(len(d['data']['children']), 'posts fetched')"`
+Expected: `5 posts fetched` (or fewer if the sub is quiet).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add requirements.txt .env.example config.py sources/base.py tests/test_base.py
+git commit -m "switch reddit access to public json endpoints"
+```
 
 ---
 

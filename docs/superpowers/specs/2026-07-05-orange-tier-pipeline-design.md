@@ -1,7 +1,9 @@
 # autoTiktok — Orange-tier pipeline redesign (Phase A)
 
-Date: 2026-07-05 (rev 2, 2026-07-06)
-Status: approved — extended with pluggable sources, niches, and virality roadmap
+Date: 2026-07-05 (rev 3, 2026-07-06)
+Status: approved — rev 3: Reddit access via public JSON endpoints (Reddit ended
+self-service API key creation in Nov 2025; PRAW upgrade path preserved behind
+the ContentSource interface for when/if the API application is approved)
 
 ## Context
 
@@ -21,7 +23,9 @@ roadmapped at the end.
 
 ## Goals
 
-- Reliable Reddit fetching via the official API (PRAW).
+- Reliable Reddit fetching via the public JSON endpoints (`.../hot.json`) with
+  a descriptive User-Agent, retries, and backoff — no credentials required.
+  (Official-API/PRAW is a later drop-in swap behind ContentSource.)
 - Natural TTS via `edge-tts` (free, tiny dependency, no local model).
 - Perfectly synced subtitles from `edge-tts` word-boundary events — no torch.
 - **Pluggable sources**: one `ContentSource` interface; every future source
@@ -76,15 +80,17 @@ Subtitle timings come from the same engine that speaks — zero drift.
   records the ID after a successful render. Prevents re-making the same video.
 
 ### sources/reddit_text.py
-- PRAW-backed. Takes a subreddit list (from the niche preset), scans hot/new,
-  filters: non-empty selftext, length in `[MIN_CHARS, MAX_CHARS]`, not NSFW,
+- Public-JSON-backed: `https://www.reddit.com/r/{sub1+sub2}/hot.json?limit=50&raw_json=1`
+  fetched via a shared `get_json` helper (UA header, retry/backoff, clear errors).
+  Filters: non-empty selftext, length in `[MIN_CHARS, MAX_CHARS]`, not NSFW,
   not stickied, not already used.
 - Script assembly: title + cleaned selftext + niche outro
   (e.g. drama: "So — whose side are you on? Comment below.").
 
 ### sources/askreddit.py
-- Fetches a hot r/AskReddit question, then its top N comments (top-level,
-  above a score threshold, cleaned, each capped in length).
+- Fetches a hot r/AskReddit question (listing JSON), then its top N comments via
+  `https://www.reddit.com/comments/{id}.json?sort=top&raw_json=1` (top-level t1
+  entries above a score threshold, cleaned, each capped in length).
 - Script assembly: question first, then answers with a spoken beat between them
   ("Number 3." or a pause via punctuation) up to `MAX_CHARS`.
 
@@ -143,14 +149,15 @@ Voices are config defaults, trivially changeable; presets are data, not code.
 
 ## Dependencies
 
-`praw`, `edge-tts`, `python-dotenv` — pinned in `requirements.txt`. No torch.
+`requests`, `edge-tts`, `python-dotenv` — pinned in `requirements.txt`. No torch,
+no praw (until the API application is approved).
 
 ## Repo hygiene
 
-`requirements.txt`; `.env.example` (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET /
-REDDIT_USER_AGENT, names only); `.gitignore` (.env, *.wav, *.mp3, out.mp4,
-*.srt, state.json, venv, __pycache__); README rewrite (Reddit app setup,
-install, per-niche usage).
+`requirements.txt`; `.env.example` (REDDIT_USER_AGENT only — descriptive UA per
+Reddit etiquette, e.g. `autoTiktok/1.0 by u/<you>`; no credentials needed);
+`.gitignore` (.env, *.wav, *.mp3, out.mp4, *.srt, state.json, venv,
+__pycache__); README rewrite (install, per-niche usage, PRAW upgrade note).
 
 ## Roadmap
 
