@@ -8,7 +8,9 @@
 
 **Tech Stack:** Python 3.14 (3.10+ required), requests (public Reddit JSON), edge-tts, python-dotenv, pytest, ffmpeg/ffprobe (system binaries).
 
-> **Rev 2 (2026-07-06):** Reddit ended self-service API key creation (Nov 2025), so PRAW is out for now. All Reddit access goes through the public JSON endpoints (`.../hot.json`, `/comments/{id}.json`) with a descriptive User-Agent via a shared `get_json` helper. Task 10 retrofits Tasks 1/3 output; Tasks 4-5 below are already written against the JSON design. PRAW returns later as a drop-in `ContentSource` swap if the API application is approved.
+> **Rev 2 (2026-07-06):** Reddit ended self-service API key creation (Nov 2025), so PRAW is out for now. Task 10 retrofits Tasks 1/3 output. PRAW returns later as a drop-in `ContentSource` swap if the API application is approved.
+>
+> **Rev 3 (2026-07-06):** The public JSON endpoints proved fingerprint-blocked (403 for every script client — curl and Python requests, any User-Agent, www/old/api hosts — verified empirically). Reddit's RSS/Atom feeds return 200 with full selftext, so the fetch layer is `fetch_text` / `fetch_entries` / `html_to_text` over `.../hot.rss` and `{permalink}.rss` (Task 10 Steps 7-10). Feed limitations accepted: no score/over_18/stickied fields → feed order ≈ ranking, AutoModerator + NSFW-title-tag filtering. Tasks 4-5 below are written against the RSS design.
 
 **Spec:** `docs/superpowers/specs/2026-07-05-orange-tier-pipeline-design.md`
 
@@ -455,8 +457,8 @@ git commit -m "add source interface, text cleaner, used-id state"
 - Test: `tests/test_reddit_text.py`
 
 **Interfaces:**
-- Consumes: `Story`, `ContentSource`, `clean_text`, `get_json`, `to_obj` from `sources.base` (get_json/to_obj land in Task 10, which runs before this task); `config.MIN_CHARS`, `config.MAX_CHARS`; `NichePreset` fields `subreddits`, `outro`.
-- Produces: `qualifies(post, used_ids, min_chars=config.MIN_CHARS) -> bool` (pure; `post` needs `.id/.stickied/.over_18/.selftext`); `build_script(title: str, body: str, outro: str) -> str`; `RedditTextSource(niche: str, preset, used_ids: set[str])` implementing `fetch()`. Task 8 constructs it.
+- Consumes: `Story`, `ContentSource`, `clean_text`, `fetch_entries`, `html_to_text` from `sources.base` (RSS layer lands in Task 10 Steps 7-10, which run before this task); `config.MIN_CHARS`, `config.MAX_CHARS`; `NichePreset` fields `subreddits`, `outro`.
+- Produces: `qualifies(entry, used_ids) -> bool` (pure; `entry` needs `.id/.kind/.author/.title`); `build_script(title: str, body: str, outro: str) -> str`; `RedditTextSource(niche: str, preset, used_ids: set[str])` implementing `fetch()`. Task 8 constructs it.
 
 - [ ] **Step 1: Write the failing tests** — `tests/test_reddit_text.py` (fakes, no network)
 
@@ -466,22 +468,22 @@ from types import SimpleNamespace
 from sources.reddit_text import build_script, qualifies
 
 
-def post(**kw):
-    base = dict(id="p1", stickied=False, over_18=False, selftext="x" * 600)
+def entry(**kw):
+    base = dict(id="p1", kind="t3", author="/u/someone",
+                title="A normal story", html="<p>story</p>")
     base.update(kw)
     return SimpleNamespace(**base)
 
 
 def test_qualifies_accepts_normal_post():
-    assert qualifies(post(), used_ids=set())
+    assert qualifies(entry(), used_ids=set())
 
 
-def test_rejects_used_sticky_nsfw_short_and_empty():
-    assert not qualifies(post(), used_ids={"p1"})
-    assert not qualifies(post(stickied=True), used_ids=set())
-    assert not qualifies(post(over_18=True), used_ids=set())
-    assert not qualifies(post(selftext="too short"), used_ids=set())
-    assert not qualifies(post(selftext=""), used_ids=set())
+def test_rejects_used_automod_nsfw_and_non_posts():
+    assert not qualifies(entry(), used_ids={"p1"})
+    assert not qualifies(entry(author="/u/AutoModerator"), used_ids=set())
+    assert not qualifies(entry(title="[NSFW] wild story"), used_ids=set())
+    assert not qualifies(entry(kind="t1"), used_ids=set())
 
 
 def test_build_script_joins_title_body_outro():
@@ -503,16 +505,19 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'sources.reddit_text'`
 
 ```python
 import config
-from sources.base import ContentSource, Story, clean_text, get_json, to_obj
+from sources.base import (ContentSource, Story, clean_text, fetch_entries,
+                          html_to_text)
 
-LISTING_URL = "https://www.reddit.com/r/{subs}/hot.json?limit=50&raw_json=1"
+LISTING_URL = "https://www.reddit.com/r/{subs}/hot.rss?limit=50"
 
 
-def qualifies(post, used_ids, min_chars=config.MIN_CHARS) -> bool:
-    return (post.id not in used_ids
-            and not post.stickied
-            and not post.over_18
-            and len(post.selftext or "") >= min_chars)
+def qualifies(entry, used_ids) -> bool:
+    # RSS has no over_18/stickied flags: filter AutoModerator + NSFW title tags
+    title = (entry.title or "").lower()
+    return (entry.kind == "t3"
+            and entry.id not in used_ids
+            and entry.author.lower() != "/u/automoderator"
+            and "nsfw" not in title[:16])
 
 
 def build_script(title: str, body: str, outro: str) -> str:
@@ -531,20 +536,18 @@ class RedditTextSource(ContentSource):
 
     def fetch(self) -> Story | None:
         url = LISTING_URL.format(subs="+".join(self.preset.subreddits))
-        payload = get_json(url)
-        for child in payload["data"]["children"]:
-            post = to_obj(child["data"])
-            if not qualifies(post, self.used_ids):
+        for entry in fetch_entries(url):
+            if not qualifies(entry, self.used_ids):
                 continue
-            body = clean_text(post.selftext, config.MAX_CHARS)
+            body = clean_text(html_to_text(entry.html), config.MAX_CHARS)
             if len(body) < config.MIN_CHARS:
                 continue
-            title = clean_text(post.title, 300)
+            title = clean_text(entry.title, 300)
             return Story(
-                id=post.id,
+                id=entry.id,
                 title=title,
                 text=build_script(title, body, self.preset.outro),
-                url=f"https://reddit.com{post.permalink}",
+                url=entry.link,
                 niche=self.niche,
             )
         return None
@@ -576,8 +579,8 @@ git commit -m "add reddit selftext source for drama and horror"
 - Test: `tests/test_askreddit.py`
 
 **Interfaces:**
-- Consumes: `Story`, `ContentSource`, `clean_text`, `get_json`, `to_obj` from `sources.base` (get_json/to_obj land in Task 10); `config.ASKREDDIT_*`, `config.MAX_CHARS`.
-- Produces: `usable_comment(comment, min_score=config.ASKREDDIT_MIN_SCORE) -> bool` (pure; needs `.stickied/.body/.score`); `build_script(title: str, answers: list[str], outro: str, max_chars=config.MAX_CHARS) -> str` (numbers the answers, stops before overflowing); `AskRedditSource(preset, used_ids: set[str])` implementing `fetch()` with `niche="askreddit"`. Task 8 constructs it.
+- Consumes: `Story`, `ContentSource`, `clean_text`, `fetch_entries`, `html_to_text` from `sources.base` (RSS layer from Task 10 Steps 7-10); `config.ASKREDDIT_MAX_ANSWERS`, `config.ASKREDDIT_MAX_ANSWER_CHARS`, `config.MAX_CHARS`.
+- Produces: `usable_comment(entry) -> bool` (pure; needs `.kind/.author/.html`); `build_script(title: str, answers: list[str], outro: str, max_chars=config.MAX_CHARS) -> str` (numbers the answers, stops before overflowing); `AskRedditSource(preset, used_ids: set[str])` implementing `fetch()` with `niche="askreddit"`. Task 8 constructs it.
 
 - [ ] **Step 1: Write the failing tests** — `tests/test_askreddit.py`
 
@@ -587,19 +590,19 @@ from types import SimpleNamespace
 from sources.askreddit import build_script, usable_comment
 
 
-def comment(**kw):
-    base = dict(stickied=False, body="A solid answer here.", score=500)
+def centry(**kw):
+    base = dict(id="c1", kind="t1", author="/u/replier",
+                html="<p>A solid answer here.</p>")
     base.update(kw)
     return SimpleNamespace(**base)
 
 
 def test_usable_comment_filters():
-    assert usable_comment(comment())
-    assert not usable_comment(comment(stickied=True))
-    assert not usable_comment(comment(body="[deleted]"))
-    assert not usable_comment(comment(body="[removed]"))
-    assert not usable_comment(comment(body=""))
-    assert not usable_comment(comment(score=3))
+    assert usable_comment(centry())
+    assert not usable_comment(centry(kind="t3"))
+    assert not usable_comment(centry(author="/u/AutoModerator"))
+    assert not usable_comment(centry(author=""))
+    assert not usable_comment(centry(html="   "))
 
 
 def test_build_script_numbers_answers():
@@ -631,18 +634,17 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'sources.askreddit'`
 
 ```python
 import config
-from sources.base import ContentSource, Story, clean_text, get_json, to_obj
+from sources.base import (ContentSource, Story, clean_text, fetch_entries,
+                          html_to_text)
 
-LISTING_URL = "https://www.reddit.com/r/AskReddit/hot.json?limit=25&raw_json=1"
-COMMENTS_URL = ("https://www.reddit.com/comments/{post_id}.json"
-                "?sort=top&limit=100&raw_json=1")
+LISTING_URL = "https://www.reddit.com/r/AskReddit/hot.rss?limit=25"
 
 
-def usable_comment(comment, min_score=config.ASKREDDIT_MIN_SCORE) -> bool:
-    body = comment.body or ""
-    return (not comment.stickied
-            and body not in ("", "[deleted]", "[removed]")
-            and comment.score >= min_score)
+def usable_comment(entry) -> bool:
+    # feed order ≈ best ranking; RSS exposes no scores
+    return (entry.kind == "t1"
+            and entry.author.lower() not in ("", "/u/automoderator")
+            and bool((entry.html or "").strip()))
 
 
 def build_script(title: str, answers: list[str], outro: str,
@@ -667,21 +669,18 @@ class AskRedditSource(ContentSource):
         self.used_ids = used_ids
 
     def fetch(self) -> Story | None:
-        listing = get_json(LISTING_URL)
-        for child in listing["data"]["children"]:
-            post = to_obj(child["data"])
-            if post.id in self.used_ids or post.stickied or post.over_18:
+        for post in fetch_entries(LISTING_URL):
+            if (post.kind != "t3" or post.id in self.used_ids
+                    or post.author.lower() == "/u/automoderator"):
                 continue
-            thread = get_json(COMMENTS_URL.format(post_id=post.id))
+            comments = fetch_entries(post.link.rstrip("/") + "/.rss?limit=25")
             answers = []
-            for c_child in thread[1]["data"]["children"]:
-                if c_child.get("kind") != "t1":  # skip "load more" stubs
-                    continue
-                c = to_obj(c_child["data"])
+            for c in comments:  # feed order ≈ best ranking
                 if not usable_comment(c):
                     continue
-                body = clean_text(c.body, config.ASKREDDIT_MAX_ANSWER_CHARS)
-                if len(body) < 20:
+                body = clean_text(html_to_text(c.html),
+                                  config.ASKREDDIT_MAX_ANSWER_CHARS)
+                if len(body) < 20 or body.lower() in ("deleted", "removed"):
                     continue
                 answers.append(body)
                 if len(answers) == config.ASKREDDIT_MAX_ANSWERS:
@@ -693,7 +692,7 @@ class AskRedditSource(ContentSource):
                 id=post.id,
                 title=title,
                 text=build_script(title, answers, self.preset.outro),
-                url=f"https://reddit.com{post.permalink}",
+                url=post.link,
                 niche="askreddit",
             )
         return None
@@ -1213,6 +1212,182 @@ Expected: `5 posts fetched` (or fewer if the sub is quiet).
 ```bash
 git add requirements.txt .env.example config.py sources/base.py tests/test_base.py
 git commit -m "switch reddit access to public json endpoints"
+```
+
+#### RSS extension (Steps 7-10, rev 3) — JSON endpoints are fingerprint-blocked; feeds are the working path
+
+Replaces `get_json`/`to_obj` (and their 5 tests) with an Atom-feed fetch layer.
+`config.ASKREDDIT_MIN_SCORE` is deleted too (RSS has no scores).
+
+**Produces (final Task 10 interface):** `fetch_text(url) -> str` (UA header, ≥5s
+politeness gap between calls, 3 attempts, 45s/90s backoff on 429, 2s/4s on
+500/502/503, else RuntimeError naming REDDIT_USER_AGENT); `fetch_entries(url)
+-> list[SimpleNamespace]` with fields `id` (prefix-stripped), `kind` ("t3"
+post / "t1" comment), `title`, `author` (like "/u/name"), `link`, `html`;
+`html_to_text(fragment) -> str` (tags stripped, entities unescaped, trailing
+"submitted by /u/…" trailer removed).
+
+- [ ] **Step 7: Write the failing tests** — in `tests/test_base.py`, DELETE the five `get_json`/`to_obj` tests and add:
+
+```python
+FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <author><name>/u/writer</name></author>
+    <id>t3_abc12</id>
+    <link href="https://www.reddit.com/r/stories/comments/abc12/tale/"/>
+    <title>A tale</title>
+    <content type="html">&lt;div class="md"&gt;&lt;p&gt;Hello story.&lt;/p&gt;&lt;/div&gt; submitted by &lt;a&gt;/u/writer&lt;/a&gt; [link] [comments]</content>
+  </entry>
+  <entry>
+    <author><name>/u/replier</name></author>
+    <id>t1_xyz99</id>
+    <link href="https://www.reddit.com/r/stories/comments/abc12/tale/xyz99/"/>
+    <title>replier on A tale</title>
+    <content type="html">&lt;p&gt;Nice one.&lt;/p&gt;</content>
+  </entry>
+</feed>"""
+
+
+class FakeResp:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_fetch_text_sends_user_agent(monkeypatch):
+    from sources import base
+    seen = {}
+
+    def fake_get(url, headers, timeout):
+        seen.update(headers)
+        return FakeResp(200, "ok")
+
+    monkeypatch.setattr(base.requests, "get", fake_get)
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    assert base.fetch_text("https://x") == "ok"
+    assert seen["User-Agent"]
+
+
+def test_fetch_text_raises_clear_error_on_403(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base.requests, "get",
+                        lambda url, headers, timeout: FakeResp(403))
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError, match="REDDIT_USER_AGENT"):
+        base.fetch_text("https://x")
+
+
+def test_fetch_text_retries_429_then_succeeds(monkeypatch):
+    from sources import base
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append(1)
+        return FakeResp(429) if len(calls) == 1 else FakeResp(200, "fine")
+
+    monkeypatch.setattr(base.requests, "get", fake_get)
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    assert base.fetch_text("https://x") == "fine"
+    assert len(calls) == 2
+
+
+def test_fetch_entries_parses_atom(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text", lambda url: FEED)
+    posts = base.fetch_entries("https://x")
+    assert posts[0].kind == "t3" and posts[0].id == "abc12"
+    assert posts[0].author == "/u/writer"
+    assert posts[0].title == "A tale"
+    assert posts[0].link.endswith("/tale/")
+    assert "Hello story." in posts[0].html
+    assert posts[1].kind == "t1" and posts[1].id == "xyz99"
+
+
+def test_html_to_text_strips_tags_and_trailer():
+    from sources.base import html_to_text
+    frag = ('<div class="md"><p>Hello story.</p></div> submitted by '
+            '<a href="u">/u/writer</a> <span>[link]</span> <span>[comments]</span>')
+    assert " ".join(html_to_text(frag).split()) == "Hello story."
+```
+
+- [ ] **Step 8: Implement the RSS layer** — in `sources/base.py`, DELETE `get_json` and `to_obj`; keep `import time`, `import requests`; add `from xml.etree import ElementTree` and `from types import SimpleNamespace` (if not present); add:
+
+```python
+ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_TRAILER = re.compile(r"submitted by\s+/u/.*$", re.IGNORECASE | re.DOTALL)
+_TAG = re.compile(r"<[^>]+>")
+
+_last_fetch = 0.0  # module-level politeness gap between Reddit hits
+
+
+def fetch_text(url: str) -> str:
+    """GET a public Reddit feed; polite spacing + 429-aware backoff."""
+    global _last_fetch
+    headers = {"User-Agent": config.REDDIT_USER_AGENT}
+    status = None
+    for attempt in range(3):
+        gap = 5.0 - (time.monotonic() - _last_fetch)
+        if gap > 0:
+            time.sleep(gap)
+        _last_fetch = time.monotonic()
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            return resp.text
+        status = resp.status_code
+        if status == 429:            # rate limited: back off hard
+            time.sleep(45 * (attempt + 1))
+            continue
+        if status in (500, 502, 503):
+            time.sleep(2 * (attempt + 1))
+            continue
+        break
+    raise RuntimeError(
+        f"Reddit request failed (HTTP {status}) for {url}. Set a descriptive "
+        "REDDIT_USER_AGENT in .env (e.g. 'autoTiktok/1.0 by u/<you>') and slow "
+        "down if 429 persists.")
+
+
+def fetch_entries(url: str) -> list[SimpleNamespace]:
+    """Fetch an Atom feed and flatten each <entry> to plain attributes."""
+    root = ElementTree.fromstring(fetch_text(url))
+    entries = []
+    for e in root.findall("atom:entry", ATOM_NS):
+        kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")
+        link = e.find("atom:link", ATOM_NS)
+        entries.append(SimpleNamespace(
+            id=eid,
+            kind=kind,          # "t3" post, "t1" comment
+            title=e.findtext("atom:title", "", ATOM_NS),
+            author=e.findtext("atom:author/atom:name", "", ATOM_NS),
+            link=link.get("href") if link is not None else "",
+            html=e.findtext("atom:content", "", ATOM_NS) or "",
+        ))
+    return entries
+
+
+def html_to_text(fragment: str) -> str:
+    """Feed content HTML -> plain text ('submitted by …' trailer removed)."""
+    text = _TAG.sub(" ", fragment)
+    text = html.unescape(text)
+    return _TRAILER.sub("", text)
+```
+
+In `config.py`: delete the `ASKREDDIT_MIN_SCORE = 100` line.
+
+- [ ] **Step 9: Run tests to verify green**
+
+Run: `python -m pytest tests/ -v`
+Expected: 24 passed (6 subtitles + 18 base: 7 original + 6 clean_text regressions + 5 RSS). `grep -rn "get_json\|to_obj\|MIN_SCORE" *.py sources/ tests/` finds nothing.
+
+- [ ] **Step 10: Live check (single request, no burst) and commit**
+
+Run: `python -c "from sources.base import fetch_entries; es = fetch_entries('https://www.reddit.com/r/AmItheAsshole/hot.rss?limit=5'); print(len(es), 'entries;', es[0].kind, es[0].id, '|', es[0].title[:50])"`
+Expected: ~5 entries, first is `t3` with a real id/title. (If 429: earlier probing tripped the rate limit — wait 5 minutes and retry once.)
+
+```bash
+git add config.py sources/base.py tests/test_base.py
+git commit -m "fetch reddit via rss feeds, json is fingerprint-blocked"
 ```
 
 ---
