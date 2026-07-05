@@ -17,10 +17,11 @@ _URL = re.compile(r"https?://\S+?(?=[.,;:!?)\]]*(?:\s|$))")
 _MD_NOISE = re.compile(r"[*_~^#>|`\[\]]")
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-# anchor on the [link]/[comments] terminals so prose that merely says
+# the real feed trailer is exactly "submitted by /u/<name> [link] [comments]"
+# at the end — requiring the immediate terminals means prose that merely says
 # "submitted by /u/xxx" mid-story is never eaten
-_TRAILER = re.compile(r"submitted by\s+/u/\S+.*?\[link\].*?\[comments\]\s*$",
-                      re.IGNORECASE | re.DOTALL)
+_TRAILER = re.compile(r"\s*submitted by\s+/u/\S+\s*\[link\]\s*\[comments\]\s*$",
+                      re.IGNORECASE)
 _TAG = re.compile(r"<[^>]+>")
 
 _last_fetch = 0.0  # module-level politeness gap between Reddit hits

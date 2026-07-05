@@ -173,3 +173,12 @@ def test_fetch_entries_raises_on_html_page(monkeypatch):
                         lambda url: "<html><body>blocked</body></html>")
     with pytest.raises(RuntimeError, match="non-feed"):
         base.fetch_entries("https://x")
+
+
+def test_html_to_text_compound_prose_and_real_trailer():
+    from sources.base import html_to_text
+    frag = ("<p>I saw a post submitted by /u/foo earlier. The drama grew.</p> "
+            "submitted by <a>/u/writer</a> <span>[link]</span> "
+            "<span>[comments]</span>")
+    out = " ".join(html_to_text(frag).split())
+    assert out == "I saw a post submitted by /u/foo earlier. The drama grew."
