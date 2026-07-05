@@ -13,7 +13,6 @@ MAX_CHARS = 2500
 
 # askreddit assembly
 ASKREDDIT_MAX_ANSWERS = 8
-ASKREDDIT_MIN_SCORE = 100
 ASKREDDIT_MAX_ANSWER_CHARS = 350
 
 # artifact paths (repo-root relative; keep SRT_PATH plain — it goes inside an ffmpeg filter)

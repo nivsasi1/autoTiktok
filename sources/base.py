@@ -5,6 +5,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from types import SimpleNamespace
+from xml.etree import ElementTree
 
 import requests
 
@@ -14,6 +15,12 @@ import config
 # of swallowing it, so "https://x.com/a." keeps its sentence-ending period.
 _URL = re.compile(r"https?://\S+?(?=[.,;:!?)\]]*(?:\s|$))")
 _MD_NOISE = re.compile(r"[*_~^#>|`\[\]]")
+
+ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_TRAILER = re.compile(r"submitted by\s+/u/.*$", re.IGNORECASE | re.DOTALL)
+_TAG = re.compile(r"<[^>]+>")
+
+_last_fetch = 0.0  # module-level politeness gap between Reddit hits
 
 
 @dataclass
@@ -75,24 +82,53 @@ def record_used_id(path: str, story_id: str) -> None:
         json.dump(sorted(ids), f)
 
 
-def get_json(url: str):
-    """GET a public Reddit JSON endpoint; retries transient failures."""
+def fetch_text(url: str) -> str:
+    """GET a public Reddit feed; polite spacing + 429-aware backoff."""
+    global _last_fetch
     headers = {"User-Agent": config.REDDIT_USER_AGENT}
     status = None
     for attempt in range(3):
+        gap = 5.0 - (time.monotonic() - _last_fetch)
+        if gap > 0:
+            time.sleep(gap)
+        _last_fetch = time.monotonic()
         resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
-            return resp.json()
+            return resp.text
         status = resp.status_code
-        if status in (429, 500, 502, 503):
+        if status == 429:            # rate limited: back off hard
+            time.sleep(45 * (attempt + 1))
+            continue
+        if status in (500, 502, 503):
             time.sleep(2 * (attempt + 1))
             continue
         break
     raise RuntimeError(
         f"Reddit request failed (HTTP {status}) for {url}. Set a descriptive "
         "REDDIT_USER_AGENT in .env (e.g. 'autoTiktok/1.0 by u/<you>') and slow "
-        "down if it persists.")
+        "down if 429 persists.")
 
 
-def to_obj(d: dict) -> SimpleNamespace:
-    return SimpleNamespace(**d)
+def fetch_entries(url: str) -> list[SimpleNamespace]:
+    """Fetch an Atom feed and flatten each <entry> to plain attributes."""
+    root = ElementTree.fromstring(fetch_text(url))
+    entries = []
+    for e in root.findall("atom:entry", ATOM_NS):
+        kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")
+        link = e.find("atom:link", ATOM_NS)
+        entries.append(SimpleNamespace(
+            id=eid,
+            kind=kind,          # "t3" post, "t1" comment
+            title=e.findtext("atom:title", "", ATOM_NS),
+            author=e.findtext("atom:author/atom:name", "", ATOM_NS),
+            link=link.get("href") if link is not None else "",
+            html=e.findtext("atom:content", "", ATOM_NS) or "",
+        ))
+    return entries
+
+
+def html_to_text(fragment: str) -> str:
+    """Feed content HTML -> plain text ('submitted by …' trailer removed)."""
+    text = _TAG.sub(" ", fragment)
+    text = html.unescape(text)
+    return _TRAILER.sub("", text)

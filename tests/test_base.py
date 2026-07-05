@@ -72,58 +72,82 @@ def test_truncate_without_spaces_keeps_full_cut():
     assert out == "wordwordwo"
 
 
+FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <author><name>/u/writer</name></author>
+    <id>t3_abc12</id>
+    <link href="https://www.reddit.com/r/stories/comments/abc12/tale/"/>
+    <title>A tale</title>
+    <content type="html">&lt;div class="md"&gt;&lt;p&gt;Hello story.&lt;/p&gt;&lt;/div&gt; submitted by &lt;a&gt;/u/writer&lt;/a&gt; [link] [comments]</content>
+  </entry>
+  <entry>
+    <author><name>/u/replier</name></author>
+    <id>t1_xyz99</id>
+    <link href="https://www.reddit.com/r/stories/comments/abc12/tale/xyz99/"/>
+    <title>replier on A tale</title>
+    <content type="html">&lt;p&gt;Nice one.&lt;/p&gt;</content>
+  </entry>
+</feed>"""
+
+
 class FakeResp:
-    def __init__(self, status_code, payload=None):
+    def __init__(self, status_code, text=""):
         self.status_code = status_code
-        self._payload = payload
-
-    def json(self):
-        return self._payload
+        self.text = text
 
 
-def test_get_json_returns_parsed_payload(monkeypatch):
-    from sources import base
-    monkeypatch.setattr(base.requests, "get",
-                        lambda url, headers, timeout: FakeResp(200, {"ok": 1}))
-    assert base.get_json("https://x") == {"ok": 1}
-
-
-def test_get_json_sends_user_agent(monkeypatch):
+def test_fetch_text_sends_user_agent(monkeypatch):
     from sources import base
     seen = {}
 
     def fake_get(url, headers, timeout):
         seen.update(headers)
-        return FakeResp(200, [])
+        return FakeResp(200, "ok")
 
     monkeypatch.setattr(base.requests, "get", fake_get)
-    base.get_json("https://x")
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    assert base.fetch_text("https://x") == "ok"
     assert seen["User-Agent"]
 
 
-def test_get_json_raises_clear_error_on_403(monkeypatch):
+def test_fetch_text_raises_clear_error_on_403(monkeypatch):
     from sources import base
     monkeypatch.setattr(base.requests, "get",
                         lambda url, headers, timeout: FakeResp(403))
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
     with pytest.raises(RuntimeError, match="REDDIT_USER_AGENT"):
-        base.get_json("https://x")
+        base.fetch_text("https://x")
 
 
-def test_get_json_retries_429_then_succeeds(monkeypatch):
+def test_fetch_text_retries_429_then_succeeds(monkeypatch):
     from sources import base
     calls = []
 
     def fake_get(url, headers, timeout):
         calls.append(1)
-        return FakeResp(429) if len(calls) == 1 else FakeResp(200, {"ok": 2})
+        return FakeResp(429) if len(calls) == 1 else FakeResp(200, "fine")
 
     monkeypatch.setattr(base.requests, "get", fake_get)
     monkeypatch.setattr(base.time, "sleep", lambda s: None)
-    assert base.get_json("https://x") == {"ok": 2}
+    assert base.fetch_text("https://x") == "fine"
     assert len(calls) == 2
 
 
-def test_to_obj_gives_attribute_access():
-    from sources.base import to_obj
-    o = to_obj({"id": "x1", "over_18": False, "selftext": "hi"})
-    assert o.id == "x1" and o.over_18 is False and o.selftext == "hi"
+def test_fetch_entries_parses_atom(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text", lambda url: FEED)
+    posts = base.fetch_entries("https://x")
+    assert posts[0].kind == "t3" and posts[0].id == "abc12"
+    assert posts[0].author == "/u/writer"
+    assert posts[0].title == "A tale"
+    assert posts[0].link.endswith("/tale/")
+    assert "Hello story." in posts[0].html
+    assert posts[1].kind == "t1" and posts[1].id == "xyz99"
+
+
+def test_html_to_text_strips_tags_and_trailer():
+    from sources.base import html_to_text
+    frag = ('<div class="md"><p>Hello story.</p></div> submitted by '
+            '<a href="u">/u/writer</a> <span>[link]</span> <span>[comments]</span>')
+    assert " ".join(html_to_text(frag).split()) == "Hello story."
