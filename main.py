@@ -46,15 +46,17 @@ def exportVideo():
                     INPUT_VID_FILE_PATH,
                     '-i',
                     AUDIO_FILE_PATH,
-                    '-filter_complex', 
-                    "scale=1080x1920:force_original_aspect_ratio='increase',crop='1080:1920:1080:40',subtitles='subtitles.srt':force_style='FontName=PT Sans,Bold=1,Alignment=10,Outline=0,OutlineColour=&H100000000,Shadow=0,Fontsize=20,MarginL=20,MarginV=25'",
+                    '-filter_complex',
+                    "[0:v]scale=1080:1920:force_original_aspect_ratio='increase',crop='1080:1920:1080:40',subtitles='subtitles.srt':force_style='FontName=PT Sans,Bold=1,Alignment=10,Outline=0,OutlineColour=&H100000000,Shadow=0,Fontsize=20,MarginL=20,MarginV=25'[v]",
                     '-shortest',
                     '-c:v',
-                    'h264_videotoolbox',
+                    'libx264',   # portable encoder; videotoolbox is macOS-only
                     '-b:v',
                     '1000k',
                     '-map',
-                    '1',
+                    '[v]',       # burned-in-subtitle video from the filter
+                    '-map',
+                    '1:a',       # audio from the wav input
                     OUTPUT_VID_FILE_PATH
                      ])
 
@@ -68,8 +70,9 @@ def getRedditPost(index: int, amount: int):
 
 # larynx -v southern_english_female-glow_tts --length-scale 1 -q "high" 
 def generateAudioFile(content: str, toDir: str):
-    output_audio = open(toDir, "w")
-    subprocess.call(['larynx','-v',"southern_english_female-glow_tts", content,"--length-scale","1","-q","high"], stdout=output_audio)
+    # binary mode + auto-close, otherwise Windows mangles the WAV bytes
+    with open(toDir, "wb") as output_audio:
+        subprocess.call(['larynx','-v',"southern_english_female-glow_tts", content,"--length-scale","1","-q","high"], stdout=output_audio)
 
 def getAudioLength(fileName: str):
     with contextlib.closing(wave.open(fileName,'r')) as f:

@@ -75,8 +75,8 @@ def convertToSrt(start, end):
 def convertToHMSMS(seconds):
     ms = int(seconds * 1000 % 1000)
     s = int(seconds % 60)
-    m = int(seconds / 60)
-    h = 0
+    m = int(seconds / 60) % 60   # roll minutes into hours past 60min
+    h = int(seconds / 3600)
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 def calculateWordDuration(word):
@@ -92,6 +92,8 @@ def calculateWordDuration(word):
 
 def syllableCount(word):
     word = word.lower()
+    if not word:   # split() can yield empty strings; don't index into them
+        return 1
     count = 0
     vowels = "aeiouy"
     if word[0] in vowels:
