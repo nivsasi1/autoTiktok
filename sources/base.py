@@ -17,7 +17,10 @@ _URL = re.compile(r"https?://\S+?(?=[.,;:!?)\]]*(?:\s|$))")
 _MD_NOISE = re.compile(r"[*_~^#>|`\[\]]")
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-_TRAILER = re.compile(r"submitted by\s+/u/.*$", re.IGNORECASE | re.DOTALL)
+# anchor on the [link]/[comments] terminals so prose that merely says
+# "submitted by /u/xxx" mid-story is never eaten
+_TRAILER = re.compile(r"submitted by\s+/u/\S+.*?\[link\].*?\[comments\]\s*$",
+                      re.IGNORECASE | re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 
 _last_fetch = 0.0  # module-level politeness gap between Reddit hits
@@ -111,7 +114,17 @@ def fetch_text(url: str) -> str:
 
 def fetch_entries(url: str) -> list[SimpleNamespace]:
     """Fetch an Atom feed and flatten each <entry> to plain attributes."""
-    root = ElementTree.fromstring(fetch_text(url))
+    text = fetch_text(url)
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError as exc:
+        raise RuntimeError(
+            f"Reddit returned a non-feed response for {url} ({exc}); "
+            "likely rate-limited or blocked — try again later.") from exc
+    if not root.tag.endswith("feed"):   # e.g. an HTML block/consent page
+        raise RuntimeError(
+            f"Reddit returned a non-feed response for {url}; "
+            "likely rate-limited or blocked — try again later.")
     entries = []
     for e in root.findall("atom:entry", ATOM_NS):
         kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")

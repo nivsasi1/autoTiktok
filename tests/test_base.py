@@ -151,3 +151,25 @@ def test_html_to_text_strips_tags_and_trailer():
     frag = ('<div class="md"><p>Hello story.</p></div> submitted by '
             '<a href="u">/u/writer</a> <span>[link]</span> <span>[comments]</span>')
     assert " ".join(html_to_text(frag).split()) == "Hello story."
+
+
+def test_html_to_text_keeps_prose_mentioning_submitted_by():
+    from sources.base import html_to_text
+    frag = "<p>I saw a post submitted by /u/foo yesterday. It got worse.</p>"
+    out = " ".join(html_to_text(frag).split())
+    assert out == "I saw a post submitted by /u/foo yesterday. It got worse."
+
+
+def test_fetch_entries_raises_on_non_xml(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text", lambda url: "<html>unclosed")
+    with pytest.raises(RuntimeError, match="non-feed"):
+        base.fetch_entries("https://x")
+
+
+def test_fetch_entries_raises_on_html_page(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text",
+                        lambda url: "<html><body>blocked</body></html>")
+    with pytest.raises(RuntimeError, match="non-feed"):
+        base.fetch_entries("https://x")
