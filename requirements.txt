@@ -1,4 +1,4 @@
-praw~=7.8
+requests~=2.32
 edge-tts~=7.0
 python-dotenv~=1.0
 pytest~=8.3

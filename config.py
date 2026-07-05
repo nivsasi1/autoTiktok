@@ -5,9 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
-REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
-REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "autoTiktok/1.0")
+REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "autoTiktok/1.0 (public-json)")
 
 # script length bounds (chars of cleaned text; ~750 chars ≈ 1 min of speech)
 MIN_CHARS = 500

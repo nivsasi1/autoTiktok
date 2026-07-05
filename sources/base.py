@@ -1,10 +1,12 @@
 import html
 import json
 import re
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from types import SimpleNamespace
 
-import praw
+import requests
 
 import config
 
@@ -73,15 +75,24 @@ def record_used_id(path: str, story_id: str) -> None:
         json.dump(sorted(ids), f)
 
 
-def make_reddit() -> praw.Reddit:
-    if not config.REDDIT_CLIENT_ID or not config.REDDIT_CLIENT_SECRET:
-        raise RuntimeError(
-            "Missing REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET. "
-            "Copy .env.example to .env and fill them in "
-            "(create a 'script' app at https://www.reddit.com/prefs/apps)."
-        )
-    return praw.Reddit(
-        client_id=config.REDDIT_CLIENT_ID,
-        client_secret=config.REDDIT_CLIENT_SECRET,
-        user_agent=config.REDDIT_USER_AGENT,
-    )
+def get_json(url: str):
+    """GET a public Reddit JSON endpoint; retries transient failures."""
+    headers = {"User-Agent": config.REDDIT_USER_AGENT}
+    status = None
+    for attempt in range(3):
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()
+        status = resp.status_code
+        if status in (429, 500, 502, 503):
+            time.sleep(2 * (attempt + 1))
+            continue
+        break
+    raise RuntimeError(
+        f"Reddit request failed (HTTP {status}) for {url}. Set a descriptive "
+        "REDDIT_USER_AGENT in .env (e.g. 'autoTiktok/1.0 by u/<you>') and slow "
+        "down if it persists.")
+
+
+def to_obj(d: dict) -> SimpleNamespace:
+    return SimpleNamespace(**d)
