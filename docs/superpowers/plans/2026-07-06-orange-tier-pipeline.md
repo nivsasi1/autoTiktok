@@ -812,7 +812,8 @@ _TICKS_PER_SECOND = 10_000_000  # edge-tts offsets are 100-ns ticks
 
 
 async def _synthesize(text: str, audio_path: str, voice: str) -> list[WordBoundary]:
-    communicate = edge_tts.Communicate(text, voice)
+    # edge-tts 7.x defaults to sentence boundaries; we need per-word events
+    communicate = edge_tts.Communicate(text, voice, boundary="WordBoundary")
     boundaries: list[WordBoundary] = []
     with open(audio_path, "wb") as f:
         async for chunk in communicate.stream():
