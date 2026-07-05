@@ -1,0 +1,15 @@
+.env
+*.mp3
+*.wav
+out.mp4
+vid.mp4
+*.srt
+transcript.*
+state.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+larynx_venv/
+.pytest_cache/
+.superpowers/
