@@ -1309,13 +1309,38 @@ def test_html_to_text_strips_tags_and_trailer():
     frag = ('<div class="md"><p>Hello story.</p></div> submitted by '
             '<a href="u">/u/writer</a> <span>[link]</span> <span>[comments]</span>')
     assert " ".join(html_to_text(frag).split()) == "Hello story."
+
+
+def test_html_to_text_keeps_prose_mentioning_submitted_by():
+    from sources.base import html_to_text
+    frag = "<p>I saw a post submitted by /u/foo yesterday. It got worse.</p>"
+    out = " ".join(html_to_text(frag).split())
+    assert out == "I saw a post submitted by /u/foo yesterday. It got worse."
+
+
+def test_fetch_entries_raises_on_non_xml(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text", lambda url: "<html>unclosed")
+    with pytest.raises(RuntimeError, match="non-feed"):
+        base.fetch_entries("https://x")
+
+
+def test_fetch_entries_raises_on_html_page(monkeypatch):
+    from sources import base
+    monkeypatch.setattr(base, "fetch_text",
+                        lambda url: "<html><body>blocked</body></html>")
+    with pytest.raises(RuntimeError, match="non-feed"):
+        base.fetch_entries("https://x")
 ```
 
 - [ ] **Step 8: Implement the RSS layer** — in `sources/base.py`, DELETE `get_json` and `to_obj`; keep `import time`, `import requests`; add `from xml.etree import ElementTree` and `from types import SimpleNamespace` (if not present); add:
 
 ```python
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
-_TRAILER = re.compile(r"submitted by\s+/u/.*$", re.IGNORECASE | re.DOTALL)
+# anchor on the [link]/[comments] terminals so prose that merely says
+# "submitted by /u/xxx" mid-story is never eaten
+_TRAILER = re.compile(r"submitted by\s+/u/\S+.*?\[link\].*?\[comments\]\s*$",
+                      re.IGNORECASE | re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 
 _last_fetch = 0.0  # module-level politeness gap between Reddit hits
@@ -1350,7 +1375,17 @@ def fetch_text(url: str) -> str:
 
 def fetch_entries(url: str) -> list[SimpleNamespace]:
     """Fetch an Atom feed and flatten each <entry> to plain attributes."""
-    root = ElementTree.fromstring(fetch_text(url))
+    text = fetch_text(url)
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError as exc:
+        raise RuntimeError(
+            f"Reddit returned a non-feed response for {url} ({exc}); "
+            "likely rate-limited or blocked — try again later.") from exc
+    if not root.tag.endswith("feed"):   # e.g. an HTML block/consent page
+        raise RuntimeError(
+            f"Reddit returned a non-feed response for {url}; "
+            "likely rate-limited or blocked — try again later.")
     entries = []
     for e in root.findall("atom:entry", ATOM_NS):
         kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")
@@ -1378,7 +1413,7 @@ In `config.py`: delete the `ASKREDDIT_MIN_SCORE = 100` line.
 - [ ] **Step 9: Run tests to verify green**
 
 Run: `python -m pytest tests/ -v`
-Expected: 24 passed (6 subtitles + 18 base: 7 original + 6 clean_text regressions + 5 RSS). `grep -rn "get_json\|to_obj\|MIN_SCORE" *.py sources/ tests/` finds nothing.
+Expected: 27 passed (6 subtitles + 21 base: 7 original + 6 clean_text regressions + 8 RSS). `grep -rn "get_json\|to_obj\|MIN_SCORE" *.py sources/ tests/` finds nothing.
 
 - [ ] **Step 10: Live check (single request, no burst) and commit**
 
