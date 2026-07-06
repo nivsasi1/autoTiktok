@@ -24,6 +24,14 @@ def test_missing_cookies_raise_named_error(tmp_path):
         CookieUploader(str(tmp_path / "missing.txt"), "acct")
 
 
+def test_missing_cookies_error_names_near_miss_files(tmp_path):
+    # a one-letter filename typo (redditregret.txt) once cost a debug round;
+    # the error must point at what IS in the folder
+    (tmp_path / "acct_typo.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(RuntimeError, match=r"does contain: acct_typo\.txt"):
+        CookieUploader(str(tmp_path / "acct.txt"), "acct")
+
+
 def test_upload_success(tmp_path, monkeypatch):
     up = make_uploader(tmp_path)
     fake_lib(monkeypatch, lambda *a, **kw: [])

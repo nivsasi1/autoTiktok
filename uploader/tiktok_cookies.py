@@ -7,6 +7,22 @@ _COOKIE_HELP = (
     "LOCALLY' browser extension, open tiktok.com, export, save as {path}")
 
 
+def missing_cookies_error(cookies_file: str, account: str) -> str:
+    """Name the exact problem, and any near-miss .txt sitting in the folder
+    (a one-letter filename typo once cost a whole debugging round)."""
+    msg = (f"cookies file {cookies_file} for account '{account}' not found — "
+           + _COOKIE_HELP.format(path=cookies_file))
+    folder = os.path.dirname(cookies_file) or "."
+    try:
+        others = sorted(n for n in os.listdir(folder) if n.endswith(".txt"))
+    except OSError:
+        others = []
+    if others:
+        msg += (f". The folder does contain: {', '.join(others)} — "
+                "a typo in the filename?")
+    return msg
+
+
 class CookieUploader(Uploader):
     """tiktok-uploader (browser cookies) implementation.
 
@@ -15,9 +31,7 @@ class CookieUploader(Uploader):
 
     def __init__(self, cookies_file: str, account: str):
         if not os.path.exists(cookies_file):
-            raise RuntimeError(
-                f"cookies file {cookies_file} for account '{account}' not "
-                "found — " + _COOKIE_HELP.format(path=cookies_file))
+            raise RuntimeError(missing_cookies_error(cookies_file, account))
         self.cookies_file = cookies_file
         self.account = account
 

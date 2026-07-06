@@ -17,7 +17,7 @@ from sources.askreddit import AskRedditSource
 from sources.base import load_used_ids, record_used_id
 from sources.reddit_text import RedditTextSource
 from uploader.base import PostResult
-from uploader.tiktok_cookies import CookieUploader
+from uploader.tiktok_cookies import CookieUploader, missing_cookies_error
 
 
 def build_source(niche: str, preset, used_ids):
@@ -126,8 +126,8 @@ def main() -> int:
         account = config.ACCOUNTS[args.account]
         niche = account.niche
         if not args.dry_run and not os.path.exists(account.cookies_file):
-            print(f"error: cookies file {account.cookies_file} for "
-                  f"'{args.account}' missing — see README 'Cookie export'")
+            print("error: " + missing_cookies_error(account.cookies_file,
+                                                    args.account))
             return 1
         if not args.dry_run:
             # human-irregular timing on top of Task Scheduler's random delay
