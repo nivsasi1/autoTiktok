@@ -60,3 +60,39 @@ NICHES = {
         outro="Which one got you? Comment below.",
     ),
 }
+
+# --- Phase B: posting ---
+@dataclass
+class Account:
+    niche: str             # key into NICHES
+    cookies_file: str      # cookies/<name>.txt, exported by the user
+    posts_per_day: int     # informational; the schedule lives in Task Scheduler
+
+
+ACCOUNTS = {
+    "drama_main":  Account("drama",  "cookies/drama_main.txt",  2),
+    "horror_main": Account("horror", "cookies/horror_main.txt", 2),
+}
+
+HASHTAGS = {
+    "drama": {
+        "fixed": ["#redditstories", "#aita", "#storytime"],
+        "pool": ["#reddit", "#redditreadings", "#askreddit", "#drama",
+                 "#storytimes", "#redditstorytime"],
+    },
+    "horror": {
+        "fixed": ["#scarystories", "#horrortok", "#nosleep"],
+        "pool": ["#creepy", "#horror", "#scary", "#creepypasta",
+                 "#truescarystories", "#paranormal"],
+    },
+    "askreddit": {
+        "fixed": ["#askreddit", "#redditstories", "#storytime"],
+        "pool": ["#reddit", "#redditreadings", "#questions", "#top10",
+                 "#redditstorytime", "#fyp"],
+    },
+}
+
+CAPTION_TITLE_CHARS = 90
+POST_JITTER_MAX_S = 900        # extra 0-15 min of human-irregular delay
+OUTBOX_DIR = "outbox"
+POST_LOG_PATH = "posts.jsonl"

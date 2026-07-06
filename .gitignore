@@ -14,3 +14,6 @@ venv/
 larynx_venv/
 .pytest_cache/
 .superpowers/
+cookies/
+outbox/
+posts.jsonl

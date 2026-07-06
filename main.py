@@ -1,20 +1,61 @@
 import argparse
 import os
+import random
+import shutil
 import sys
+import time
+from pathlib import Path
 
 import config
+import metadata
+import post_log
 import subtitles
 import tts
 import video
 from sources.askreddit import AskRedditSource
 from sources.base import load_used_ids, record_used_id
 from sources.reddit_text import RedditTextSource
+from uploader.tiktok_cookies import CookieUploader
 
 
 def build_source(niche: str, preset, used_ids):
     if niche == "askreddit":
         return AskRedditSource(preset, used_ids)
     return RedditTextSource(niche, preset, used_ids)
+
+
+def _publish(story, account_name: str, dry_run: bool) -> int:
+    """Caption + upload the rendered video; park it in the outbox on failure."""
+    account = config.ACCOUNTS[account_name]
+    caption = metadata.build_caption(story, account.niche)
+    record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "account": account_name,
+              "niche": account.niche, "story_id": story.id, "title": story.title}
+    if dry_run:
+        print(f"dry-run: would post {config.OUTPUT_VID_PATH}")
+        print(f"caption: {caption}")
+        try:
+            post_log.append_post(config.POST_LOG_PATH,
+                                 {**record, "ok": None, "detail": "dry-run"})
+        except OSError as exc:
+            print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
+        return 0
+    uploader = CookieUploader(account.cookies_file, account_name)
+    result = uploader.upload(config.OUTPUT_VID_PATH, caption)
+    try:
+        post_log.append_post(config.POST_LOG_PATH,
+                             {**record, "ok": result.ok, "detail": result.detail})
+    except OSError as exc:
+        print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
+    if not result.ok:
+        os.makedirs(config.OUTBOX_DIR, exist_ok=True)
+        parked = os.path.join(config.OUTBOX_DIR, f"{story.id}.mp4")
+        shutil.move(config.OUTPUT_VID_PATH, parked)
+        Path(config.OUTBOX_DIR, f"{story.id}.txt").write_text(
+            caption, encoding="utf-8")
+        print(f"upload failed ({result.detail}); video parked at {parked}")
+        return 1
+    print(f"posted to {account_name}: {caption[:60]}")
+    return 0
 
 
 def main() -> int:
@@ -24,10 +65,30 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser(description="Reddit story -> TikTok video")
-    parser.add_argument("--niche", choices=sorted(config.NICHES),
-                        default=config.DEFAULT_NICHE)
+    parser.add_argument("--niche", choices=sorted(config.NICHES))
+    parser.add_argument("--post", action="store_true",
+                        help="upload to TikTok after rendering")
+    parser.add_argument("--account", choices=sorted(config.ACCOUNTS),
+                        help="account to post as (implies its niche)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --post: render and caption, skip the upload")
     args = parser.parse_args()
-    preset = config.NICHES[args.niche]
+
+    if args.post:
+        if not args.account:
+            parser.error("--post requires --account")
+        account = config.ACCOUNTS[args.account]
+        niche = account.niche
+        if not args.dry_run and not os.path.exists(account.cookies_file):
+            print(f"error: cookies file {account.cookies_file} for "
+                  f"'{args.account}' missing — see README 'Cookie export'")
+            return 1
+        if not args.dry_run:
+            # human-irregular timing on top of Task Scheduler's random delay
+            time.sleep(random.uniform(0, config.POST_JITTER_MAX_S))
+    else:
+        niche = args.niche or config.DEFAULT_NICHE
+    preset = config.NICHES[niche]
 
     if not os.path.exists(config.INPUT_VID_PATH):
         print(f"error: background clip {config.INPUT_VID_PATH} not found "
@@ -35,9 +96,9 @@ def main() -> int:
         return 1
 
     used_ids = load_used_ids(config.STATE_PATH)
-    story = build_source(args.niche, preset, used_ids).fetch()
+    story = build_source(niche, preset, used_ids).fetch()
     if story is None:
-        print(f"no qualifying {args.niche} post right now — try again later")
+        print(f"no qualifying {niche} post right now — try again later")
         return 0
     print(f"story: {story.title}\n       {story.url}")
 
@@ -58,6 +119,9 @@ def main() -> int:
         # the video is already rendered — don't lose it over a state hiccup
         print(f"warning: couldn't update {config.STATE_PATH} ({exc}); "
               "this story may be picked again next run")
+
+    if args.post:
+        return _publish(story, args.account, args.dry_run)
     print(f"done -> {config.OUTPUT_VID_PATH}")
     return 0
 
