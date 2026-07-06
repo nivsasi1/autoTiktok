@@ -3,6 +3,7 @@
 *.wav
 out.mp4
 out_part*.mp4
+hook_card.png
 vid.mp4
 queue/
 *.srt

@@ -72,6 +72,21 @@ def _publish(story, account_name: str, dry_run: bool,
     return 0
 
 
+def _park_part2(story_id) -> None:
+    """Part 1 didn't go out: pull part 2 from the queue into the outbox so
+    the scheduler can't post a sequel whose opener never appeared."""
+    entry = pending.pop(config.QUEUE_DIR, story_id)
+    if entry is None:
+        return
+    video_path, meta = entry
+    os.makedirs(config.OUTBOX_DIR, exist_ok=True)
+    parked = os.path.join(config.OUTBOX_DIR, os.path.basename(video_path))
+    shutil.move(video_path, parked)
+    Path(config.OUTBOX_DIR, f"{story_id}_p2.txt").write_text(
+        meta.get("caption", ""), encoding="utf-8")
+    print(f"part 1 failed — parked part 2 alongside it ({parked})")
+
+
 def _publish_queued(account_name: str, dry_run: bool):
     """Post the oldest queued part for this account; None if queue is empty.
     A dry run reports the entry but leaves it queued."""
@@ -172,7 +187,10 @@ def main() -> int:
                                  "account": args.account, "niche": niche,
                                  "title": story.title, "url": story.url,
                                  "caption": caption2})
-            return _publish(story, args.account, args.dry_run, part=1)
+            rc = _publish(story, args.account, args.dry_run, part=1)
+            if rc != 0 and not args.dry_run:
+                _park_part2(story.id)
+            return rc
         return _publish(story, args.account, args.dry_run)
     if result.split:
         print(f"done -> {config.OUTPUT_VID_PATH} + {config.OUTPUT_PART2_PATH}")

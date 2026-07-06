@@ -144,6 +144,18 @@ def test_failed_queued_part_parks_with_part_suffix(tmp_path, monkeypatch):
     assert (tmp_path / "outbox" / "s1_p2.txt").read_text(encoding="utf-8") == "cap"
 
 
+def test_park_part2_moves_queued_video_to_outbox(tmp_path, monkeypatch):
+    # part 1 failed: the sequel must not stay scheduled behind a missing opener
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    queue_part2(tmp_path, monkeypatch)
+    main._park_part2("s1")
+    assert (tmp_path / "outbox" / "s1_p2.mp4").read_bytes() == b"part2"
+    assert (tmp_path / "outbox" / "s1_p2.txt").read_text(
+        encoding="utf-8").startswith("A tale")
+    assert pending.next_entry(config.QUEUE_DIR, "redditregrets") is None
+    main._park_part2("s1")   # nothing queued now: a no-op, not a crash
+
+
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
     # a --post run that finds nothing still records the attempt, so posts.jsonl
     # tells a dry subreddit day apart from a scheduler that never fired

@@ -47,17 +47,22 @@ python main.py --niche askreddit
 ```
 
 Output: `out.mp4` (1080x1920, karaoke captions burned in — spoken words sweep
-to yellow, timed from real TTS word boundaries — plus a big title hook over
-the first 2.5s). Artifacts `output.mp3` / `captions.ass` are left behind for
+to yellow, timed from real TTS word boundaries — plus a Reddit-post-style
+hook card over the first 3s: the niche account's avatar (`assets/pfp_<account>.png`),
+handle, title and engagement row; falls back to a big text hook if card
+rendering fails). Artifacts `output.mp3` / `captions.ass` are left behind for
 inspection; `state.json` remembers used posts so you never render the same
 story twice.
 
 Narrations over `SPLIT_THRESHOLD_S` (100s) are split at a mid-story sentence
 end into **Part 1/2 + Part 2/2** — on-screen labels, a TO BE CONTINUED tease,
-part-labelled captions. Without `--post` both land next to each other
-(`out.mp4` + `out_part2.mp4`); with `--post`, part 1 posts now and part 2
-waits in `queue/` — the next scheduled run posts it before fetching anything
-new, so a split story goes out as two consecutive posts.
+part-labelled captions, and part 2 opens with a spoken "Part 2 of \<title\>"
+lead-in so it never resumes mid-thought. Without `--post` both land next to
+each other (`out.mp4` + `out_part2.mp4`); with `--post`, part 1 posts now and
+part 2 waits in `queue/` — the next scheduled run posts it before fetching
+anything new, so a split story goes out as two consecutive posts. If part 1's
+upload fails, part 2 is parked in `outbox/` alongside it instead of staying
+scheduled.
 
 Niche presets (subreddits, voice, words-per-caption, outro) live in
 `config.py` — edit them freely.

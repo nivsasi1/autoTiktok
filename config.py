@@ -34,6 +34,10 @@ SPLIT_THRESHOLD_S = 100
 OUTPUT_PART2_PATH = "out_part2.mp4"
 QUEUE_DIR = "queue"                 # part 2 waits here for the next --post run
 
+# reddit-style hook card over the opening seconds
+HOOK_CARD_S = 3.0
+HOOK_CARD_PATH = "hook_card.png"
+
 VIDEO_BITRATE = "2500k"
 FORCE_STYLE = (
     "FontName=Arial,Bold=1,Alignment=10,Fontsize=20,"

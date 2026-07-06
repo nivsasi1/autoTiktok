@@ -38,6 +38,25 @@ def next_entry(queue_dir, account):
     return None
 
 
+def pop(queue_dir, story_id, part=2):
+    """Take a specific entry out of the queue (video_path, meta) — used to
+    pull part 2 back when part 1's upload fails. None if not queued."""
+    stem = os.path.join(queue_dir, f"{story_id}_p{part}")
+    video, sidecar = stem + ".mp4", stem + ".json"
+    if not os.path.exists(video):
+        return None
+    try:
+        with open(sidecar, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        meta = {}
+    try:
+        os.remove(sidecar)
+    except OSError:
+        pass
+    return video, meta
+
+
 def remove(video_path) -> None:
     """Drop an entry once posted (or parked): sidecar always, video if the
     publish path didn't already move it away."""

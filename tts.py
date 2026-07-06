@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import edge_tts
 
@@ -6,6 +7,32 @@ from subtitles import WordBoundary
 from util import atomic_path
 
 _TICKS_PER_SECOND = 10_000_000  # edge-tts offsets are 100-ns ticks
+
+_ALNUM = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def _restore_punctuation(boundaries, text):
+    """edge-tts strips punctuation from most WordBoundary texts, which
+    silently breaks everything sentence-aware (caption breaks at sentence
+    ends, the two-part splitter). Splice it back from the source text by
+    walking both word streams in lockstep; unmatched words pass through."""
+    tokens = text.split()
+    ti = 0
+    out = []
+    for b in boundaries:
+        target = _ALNUM.sub("", b.word).lower()
+        matched = None
+        if target:
+            for j in range(ti, min(ti + 4, len(tokens))):
+                if _ALNUM.sub("", tokens[j]).lower() == target:
+                    matched = j
+                    break
+        if matched is None:
+            out.append(b)
+        else:
+            out.append(WordBoundary(tokens[matched], b.start, b.end))
+            ti = matched + 1
+    return out
 
 
 async def _synthesize(text: str, audio_path: str, voice: str) -> list[WordBoundary]:
@@ -31,4 +58,4 @@ def synthesize(text: str, audio_path: str, voice: str) -> list[WordBoundary]:
         if not boundaries:
             raise RuntimeError("edge-tts returned no word boundaries — is the "
                                "voice name valid and the network up?")
-    return boundaries
+    return _restore_punctuation(boundaries, text)

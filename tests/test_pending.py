@@ -46,6 +46,19 @@ def test_next_entry_skips_sidecar_without_video(tmp_path):
     assert pending.next_entry(str(q), "nosleeptonight") is None
 
 
+def test_pop_takes_specific_entry(tmp_path):
+    q = str(tmp_path / "queue")
+    src = tmp_path / "v.mp4"
+    src.write_bytes(b"x")
+    pending.enqueue(q, str(src), meta(story_id="s9"))
+    assert pending.pop(q, "other") is None
+    video, m = pending.pop(q, "s9")
+    assert video.endswith("s9_p2.mp4") and m["caption"] == "cap"
+    assert not (tmp_path / "queue" / "s9_p2.json").exists()
+    # sidecar gone -> the scheduler can no longer pick this entry up
+    assert pending.next_entry(q, "nosleeptonight") is None
+
+
 def test_remove_drops_video_and_sidecar(tmp_path):
     q = str(tmp_path / "queue")
     src = tmp_path / "v.mp4"

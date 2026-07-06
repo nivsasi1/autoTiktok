@@ -14,7 +14,7 @@ import config
 import metadata
 import pending
 import pipeline
-from main import _publish, build_source
+from main import _park_part2, _publish, build_source
 from sources.base import load_used_ids, record_used_id
 from sources.freeform import FreeformSource
 from sources.reddit_url import RedditUrlSource
@@ -116,7 +116,9 @@ def do_post(state, cap1, cap2, account, dry_run):
                                  "title": story.title, "url": story.url,
                                  "caption": cap2})
                 print("queued part 2 — the next scheduled --post run sends it")
-            _publish(story, account, dry_run, part=1, caption=cap1)
+            rc = _publish(story, account, dry_run, part=1, caption=cap1)
+            if rc != 0 and not dry_run:
+                _park_part2(story.id)
         else:
             _publish(story, account, dry_run, caption=cap1)
     return out.getvalue().strip()
