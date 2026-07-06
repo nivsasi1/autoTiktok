@@ -1,3 +1,5 @@
+import re
+import sys
 from types import SimpleNamespace
 
 import config
@@ -34,6 +36,10 @@ def test_dry_run_logs_and_never_uploads(tmp_path, monkeypatch):
     assert main._publish(story(), "drama_main", dry_run=True) == 0
     posts = read_posts(config.POST_LOG_PATH)
     assert posts[0]["ok"] is None and posts[0]["story_id"] == "s1"
+    # url is logged so a parked post can be traced back to its thread by hand
+    assert posts[0]["url"] == "u"
+    # ts carries a utc offset so it stays unambiguous across DST
+    assert re.search(r"[+-]\d{4}$", posts[0]["ts"])
 
 
 def test_success_logs_and_keeps_video(tmp_path, monkeypatch):
@@ -55,3 +61,24 @@ def test_failure_parks_video_in_outbox(tmp_path, monkeypatch):
     caption = (tmp_path / "outbox" / "s1.txt").read_text(encoding="utf-8")
     assert caption.startswith("A tale")
     assert read_posts(config.POST_LOG_PATH)[0]["ok"] is False
+
+
+def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
+    # a --post run that finds nothing still records the attempt, so posts.jsonl
+    # tells a dry subreddit day apart from a scheduler that never fired
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    monkeypatch.setattr(config, "INPUT_VID_PATH", str(tmp_path / "vid.mp4"))
+    (tmp_path / "vid.mp4").write_bytes(b"clip")
+    monkeypatch.setattr(config, "STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setattr(main, "build_source",
+                        lambda *a, **kw: SimpleNamespace(fetch=lambda: None))
+    monkeypatch.setattr(
+        sys, "argv",
+        ["main.py", "--post", "--account", "drama_main", "--dry-run"])
+    assert main.main() == 0
+    posts = read_posts(config.POST_LOG_PATH)
+    assert len(posts) == 1
+    assert posts[0]["story_id"] is None
+    assert posts[0]["ok"] is None
+    assert posts[0]["detail"] == "no story"
+    assert posts[0]["account"] == "drama_main"
