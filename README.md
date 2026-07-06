@@ -16,8 +16,8 @@ answers).
    winget install Gyan.FFmpeg
    ```
    (new terminal afterwards so PATH refreshes)
-3. **(Optional) User-Agent** — no credentials needed; Reddit's public JSON
-   endpoints just want a descriptive UA. The default works, but to set your own:
+3. **(Optional) User-Agent** — no credentials needed; Reddit's public RSS
+   feeds just want a descriptive UA. The default works, but to set your own:
    ```
    copy .env.example .env    # REDDIT_USER_AGENT=autoTiktok/1.0 by u/<you>
    ```

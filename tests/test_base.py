@@ -134,6 +134,18 @@ def test_fetch_text_retries_429_then_succeeds(monkeypatch):
     assert len(calls) == 2
 
 
+def test_fetch_text_retries_network_errors_then_raises(monkeypatch):
+    from sources import base
+
+    def boom(url, headers, timeout):
+        raise base.requests.ConnectionError("no wifi")
+
+    monkeypatch.setattr(base.requests, "get", boom)
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError, match="network"):
+        base.fetch_text("https://x")
+
+
 def test_fetch_entries_parses_atom(monkeypatch):
     from sources import base
     monkeypatch.setattr(base, "fetch_text", lambda url: FEED)

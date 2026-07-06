@@ -1,6 +1,7 @@
 import config
 from sources.base import (ContentSource, Story, clean_text, fetch_entries,
                           html_to_text)
+from sources.reddit_text import qualifies
 
 LISTING_URL = "https://www.reddit.com/r/AskReddit/hot.rss?limit=25"
 
@@ -35,8 +36,7 @@ class AskRedditSource(ContentSource):
 
     def fetch(self) -> Story | None:
         for post in fetch_entries(LISTING_URL):
-            if (post.kind != "t3" or post.id in self.used_ids
-                    or post.author.lower() == "/u/automoderator"):
+            if not qualifies(post, self.used_ids):
                 continue
             comments = fetch_entries(post.link.rstrip("/") + "/.rss?limit=25")
             answers = []

@@ -46,7 +46,7 @@ def clean_text(raw: str, max_chars: int) -> str:
     # Unescape first so downstream steps see plain chars (handles &#39;, &gt;,
     # &amp; etc.); the zero-width space doesn't match \s so replace it too.
     text = html.unescape(raw)
-    text = text.replace("​", " ")
+    text = text.replace("\u200b", " ")
     # Drop markdown link URLs but keep the (possibly nested-bracket) label
     # text, e.g. "[my [nested] post](url)" -> "[my [nested] post]". The
     # leftover brackets get stripped by the noise class below — this sidesteps
@@ -96,19 +96,24 @@ def fetch_text(url: str) -> str:
         if gap > 0:
             time.sleep(gap)
         _last_fetch = time.monotonic()
-        resp = requests.get(url, headers=headers, timeout=15)
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+        except requests.RequestException as exc:
+            status = f"network error: {exc.__class__.__name__}"
+            time.sleep(2 * (attempt + 1))
+            continue
         if resp.status_code == 200:
             return resp.text
-        status = resp.status_code
-        if status == 429:            # rate limited: back off hard
+        status = f"HTTP {resp.status_code}"
+        if resp.status_code == 429:            # rate limited: back off hard
             time.sleep(45 * (attempt + 1))
             continue
-        if status in (500, 502, 503):
+        if resp.status_code in (500, 502, 503):
             time.sleep(2 * (attempt + 1))
             continue
         break
     raise RuntimeError(
-        f"Reddit request failed (HTTP {status}) for {url}. Set a descriptive "
+        f"Reddit request failed ({status}) for {url}. Set a descriptive "
         "REDDIT_USER_AGENT in .env (e.g. 'autoTiktok/1.0 by u/<you>') and slow "
         "down if 429 persists.")
 
