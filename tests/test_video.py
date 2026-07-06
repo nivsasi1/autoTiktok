@@ -173,6 +173,17 @@ def test_build_cmd_maps_filtered_video_and_audio():
     assert cmd[-1] == "out.mp4"
 
 
+def test_ass_captions_keep_their_own_styles():
+    # force_style would stomp the karaoke colors baked into the .ass
+    cmd = build_cmd("vid.mp4", "output.mp3", "captions.ass", "out.mp4", 0.0)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "subtitles=captions.ass" in fc and "force_style" not in fc
+    chain_cmd = build_chain_cmd([("a.mp4", 12.0), ("b.mp4", 12.0)],
+                                "output.mp3", "captions.ass", "out.mp4")
+    fc = chain_cmd[chain_cmd.index("-filter_complex") + 1]
+    assert "subtitles=captions.ass" in fc and "force_style" not in fc
+
+
 def test_build_cmd_with_ambient_loops_and_mixes_quietly():
     cmd = build_cmd("vid.mp4", "output.mp3", "subtitles.srt", "out.mp4",
                     bg_offset=0.0, ambient="drone.mp3", ambient_vol=0.12)

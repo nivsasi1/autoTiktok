@@ -46,9 +46,11 @@ python main.py --niche horror
 python main.py --niche askreddit
 ```
 
-Output: `out.mp4` (1080x1920, captions burned in). Artifacts `output.mp3` /
-`subtitles.srt` are left behind for inspection; `state.json` remembers used
-posts so you never render the same story twice.
+Output: `out.mp4` (1080x1920, karaoke captions burned in — spoken words sweep
+to yellow, timed from real TTS word boundaries — plus a big title hook over
+the first 2.5s). Artifacts `output.mp3` / `captions.ass` are left behind for
+inspection; `state.json` remembers used posts so you never render the same
+story twice.
 
 Narrations over `SPLIT_THRESHOLD_S` (100s) are split at a mid-story sentence
 end into **Part 1/2 + Part 2/2** — on-screen labels, a TO BE CONTINUED tease,

@@ -17,6 +17,8 @@ def redirect_paths(tmp_path, monkeypatch, with_video=True):
     monkeypatch.setattr(config, "POST_LOG_PATH", str(tmp_path / "posts.jsonl"))
     monkeypatch.setattr(config, "OUTBOX_DIR", str(tmp_path / "outbox"))
     monkeypatch.setattr(config, "OUTPUT_VID_PATH", str(tmp_path / "out.mp4"))
+    # never let a REAL queued part 2 leak into a test run
+    monkeypatch.setattr(config, "QUEUE_DIR", str(tmp_path / "queue"))
     if with_video:
         (tmp_path / "out.mp4").write_bytes(b"video")
 

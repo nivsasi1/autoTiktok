@@ -73,17 +73,21 @@ def render_story(story, preset, niche: str, log=print) -> RenderResult:
                  (2, part2, cut, None, config.OUTPUT_PART2_PATH)]
         for n, bounds, start, dur, out_path in parts:
             part_audio = _part_path(config.AUDIO_PATH, n)
-            part_srt = _part_path(config.SRT_PATH, n)
+            part_captions = _part_path(config.CAPTIONS_PATH, n)
             video.cut_audio(config.AUDIO_PATH, part_audio, start, dur)
             part_len = cut if n == 1 else narration - cut
-            subtitles.write_srt(bounds, part_srt, preset.words_per_line,
-                                extra_cues=split.label_cues(n, part_len))
-            _render(niche, part_audio, part_srt, out_path, log=log)
+            # the hook sells the story once; part 2 keeps just its label
+            subtitles.write_ass(bounds, part_captions, preset.words_per_line,
+                                extra_cues=split.label_cues(n, part_len),
+                                hook=story.title if n == 1 else None)
+            _render(niche, part_audio, part_captions, out_path, log=log)
             result.videos.append((out_path, n))
     else:
-        subtitles.write_srt(boundaries, config.SRT_PATH, preset.words_per_line)
-        log(f"subtitles: {config.SRT_PATH} ({preset.words_per_line} words/line)")
-        _render(niche, config.AUDIO_PATH, config.SRT_PATH,
+        subtitles.write_ass(boundaries, config.CAPTIONS_PATH,
+                            preset.words_per_line, hook=story.title)
+        log(f"captions: {config.CAPTIONS_PATH} "
+            f"({preset.words_per_line} words/line, karaoke)")
+        _render(niche, config.AUDIO_PATH, config.CAPTIONS_PATH,
                 config.OUTPUT_VID_PATH, log=log)
         result.videos.append((config.OUTPUT_VID_PATH, None))
     return result

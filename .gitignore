@@ -6,6 +6,7 @@ out_part*.mp4
 vid.mp4
 queue/
 *.srt
+*.ass
 *.tmp
 transcript.*
 state.json

@@ -15,9 +15,9 @@ MAX_CHARS = 2500
 ASKREDDIT_MAX_ANSWERS = 8
 ASKREDDIT_MAX_ANSWER_CHARS = 350
 
-# artifact paths (repo-root relative; keep SRT_PATH plain — it goes inside an ffmpeg filter)
+# artifact paths (repo-root relative; keep CAPTIONS_PATH plain — it goes inside an ffmpeg filter)
 AUDIO_PATH = "output.mp3"
-SRT_PATH = "subtitles.srt"
+CAPTIONS_PATH = "captions.ass"
 INPUT_VID_PATH = "vid.mp4"          # single-clip fallback
 BACKGROUNDS_DIR = "assets/backgrounds"   # theme subfolders of clips (horror/, ...)
 CROSSFADE_S = 0.3                   # crossfade between chained background clips

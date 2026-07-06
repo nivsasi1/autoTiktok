@@ -26,7 +26,7 @@ def wire(monkeypatch, narration):
     monkeypatch.setattr(pipeline.video, "get_duration", lambda p: narration)
     monkeypatch.setattr(pipeline.video, "cut_audio",
                         lambda *a: calls["cut"].append(a))
-    monkeypatch.setattr(pipeline.subtitles, "write_srt",
+    monkeypatch.setattr(pipeline.subtitles, "write_ass",
                         lambda *a, **kw: calls["srt"].append((a, kw)))
     monkeypatch.setattr(
         pipeline, "_render",
@@ -42,6 +42,7 @@ def test_short_story_renders_one_video(monkeypatch):
     assert not result.split
     assert calls["cut"] == []                       # no audio slicing
     assert calls["render"] == [config.OUTPUT_VID_PATH]
+    assert calls["srt"][0][1].get("hook") == "T"    # title is the hook
 
 
 def test_long_story_renders_two_parts(monkeypatch):
@@ -53,6 +54,8 @@ def test_long_story_renders_two_parts(monkeypatch):
     assert calls["render"] == [config.OUTPUT_VID_PATH,
                                config.OUTPUT_PART2_PATH]
     assert len(calls["cut"]) == 2                   # both slices cut
-    # each part got label cues merged into its srt
+    # each part got label cues; the hook sells part 1 only
     for (_args, kw) in calls["srt"]:
         assert kw.get("extra_cues")
+    assert calls["srt"][0][1].get("hook") == "T"
+    assert calls["srt"][1][1].get("hook") is None

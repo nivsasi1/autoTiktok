@@ -111,12 +111,20 @@ def _ambient_mix(narr_label, ambient_idx, vol):
             f"[{narr_label}][amb]amix=inputs=2:duration=first:normalize=0[a]")
 
 
+def _subtitles_filter(srt, force_style):
+    # .ass carries its own styles (karaoke colors, hook); force_style would
+    # stomp them — it's only for bare .srt files
+    if srt.endswith(".ass"):
+        return f"subtitles={srt}"
+    return f"subtitles={srt}:force_style='{force_style}'"
+
+
 def build_cmd(vid, audio, srt, out, bg_offset,
               bitrate=config.VIDEO_BITRATE, force_style=config.FORCE_STYLE,
               ambient=None, ambient_vol=config.AMBIENT_VOLUME):
     # center-crop to 9:16 whatever the source resolution, then burn subtitles
     vf = (f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-          f"crop=1080:1920,subtitles={srt}:force_style='{force_style}'[v]")
+          f"crop=1080:1920,{_subtitles_filter(srt, force_style)}[v]")
     cmd = ["ffmpeg", "-y",
            "-ss", f"{bg_offset:.2f}", "-i", vid,   # fast-seek the background
            "-i", audio]
@@ -160,7 +168,7 @@ def build_chain_cmd(chain, audio, srt, out,
         parts.append(f"{cur}[v{i}]xfade=transition=fade:"
                      f"duration={fade:.2f}:offset={off:.3f}[x{i}]")
         cur, total = f"[x{i}]", off + chain[i][1]
-    parts.append(f"{cur}subtitles={srt}:force_style='{force_style}'[v]")
+    parts.append(f"{cur}{_subtitles_filter(srt, force_style)}[v]")
     fc = ";".join(parts)
     if ambient:
         fc += _ambient_mix(f"{n}:a", n + 1, ambient_vol)
