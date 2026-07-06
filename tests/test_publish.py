@@ -84,7 +84,7 @@ def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
     # a --post run that finds nothing still records the attempt, so posts.jsonl
     # tells a dry subreddit day apart from a scheduler that never fired
     redirect_paths(tmp_path, monkeypatch, with_video=False)
-    # empty backgrounds dir -> pick_background falls back to the temp vid.mp4
+    # empty backgrounds dir -> plan_background falls back to the temp vid.mp4
     monkeypatch.setattr(config, "BACKGROUNDS_DIR", str(tmp_path / "bg"))
     monkeypatch.setattr(config, "INPUT_VID_PATH", str(tmp_path / "vid.mp4"))
     (tmp_path / "vid.mp4").write_bytes(b"clip")

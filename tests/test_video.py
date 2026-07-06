@@ -73,13 +73,33 @@ def test_plan_repeats_clips_when_folder_runs_short(tmp_path):
     assert len(set(names)) == 2     # only the two clips, repeated
 
 
-def test_plan_widens_when_theme_folder_empty(tmp_path):
-    (tmp_path / "abstract").mkdir()             # shared theme exists but empty
-    make_theme(tmp_path, "horror", ["cave.mp4"])
+def test_plan_empty_theme_tries_other_unreserved_then_loose(tmp_path):
+    (tmp_path / "abstract").mkdir()                 # empty unreserved theme
+    (tmp_path / "loose.mp4").write_bytes(b"clip")   # top-level, unreserved
+    make_theme(tmp_path, "horror", ["cave.mp4"])    # reserved for horror
     plan = plan_background("drama", 10, rng=random.Random(1),
-                           prober=prober({"cave.mp4": 60}),
+                           prober=prober({"loose.mp4": 60, "cave.mp4": 60}),
                            backgrounds_dir=str(tmp_path), fallback="vid.mp4")
-    assert os.path.basename(plan[0][0]) == "cave.mp4"   # soft fallback to any clip
+    assert os.path.basename(plan[0][0]) == "loose.mp4"   # never the reserved clip
+
+
+def test_plan_never_leaks_reserved_folder_even_as_last_resort(tmp_path):
+    make_theme(tmp_path, "horror", ["cave.mp4"])    # only reserved folders exist
+    make_theme(tmp_path, "drama", ["spat.mp4"])
+    with pytest.raises(RuntimeError, match="no background clip"):
+        plan_background("askreddit", 10, rng=random.Random(1),
+                        prober=prober({"cave.mp4": 60, "spat.mp4": 60}),
+                        backgrounds_dir=str(tmp_path),
+                        fallback=str(tmp_path / "missing.mp4"))
+
+
+def test_plan_empty_niche_folder_drops_to_unreserved(tmp_path):
+    (tmp_path / "horror").mkdir()                   # niche folder exists, empty
+    make_theme(tmp_path, "scenic", ["beach.mp4"])
+    plan = plan_background("horror", 10, rng=random.Random(1),
+                           prober=prober({"beach.mp4": 60}),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    assert os.path.basename(plan[0][0]) == "beach.mp4"
 
 
 def test_plan_falls_back_to_vid_then_errors(tmp_path):

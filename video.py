@@ -7,19 +7,29 @@ import subprocess
 import config
 
 
-def _theme_dir(backgrounds_dir, niche, rng):
-    """Folder named after the niche wins; a folder named after ANY niche is
-    reserved for it, so other niches draw from the shared (unreserved) pool."""
+def _candidate_clips(backgrounds_dir, niche, rng):
+    """One theme folder's clips: the folder named after the niche wins; else a
+    random unreserved folder (a folder named after ANY niche is reserved for
+    it and never serves another niche); else loose top-level clips."""
     try:
         subs = sorted(e.name for e in os.scandir(backgrounds_dir) if e.is_dir())
     except OSError:
-        return None
-    if not subs:
-        return None
+        subs = []
+
+    def folder_clips(name):
+        return sorted(glob.glob(os.path.join(backgrounds_dir, name, "*.mp4")))
+
     if niche in subs:
-        return os.path.join(backgrounds_dir, niche)
-    shared = [s for s in subs if s not in config.NICHES]
-    return os.path.join(backgrounds_dir, rng.choice(shared or subs))
+        clips = folder_clips(niche)
+        if clips:
+            return clips
+    unreserved = [s for s in subs if s not in config.NICHES]
+    rng.shuffle(unreserved)
+    for sub in unreserved:      # random folder, skipping empty ones
+        clips = folder_clips(sub)
+        if clips:
+            return clips
+    return sorted(glob.glob(os.path.join(backgrounds_dir, "*.mp4")))
 
 
 def plan_background(niche, needed, rng=None, prober=None,
@@ -35,11 +45,7 @@ def plan_background(niche, needed, rng=None, prober=None,
     """
     rng = random if rng is None else rng
     prober = get_duration if prober is None else prober
-    theme = _theme_dir(backgrounds_dir, niche, rng)
-    clips = sorted(glob.glob(os.path.join(theme, "*.mp4"))) if theme else []
-    if not clips:   # no/empty theme folder: any clip under the dir, then vid.mp4
-        clips = sorted(glob.glob(os.path.join(backgrounds_dir, "**", "*.mp4"),
-                                 recursive=True))
+    clips = _candidate_clips(backgrounds_dir, niche, rng)
     if not clips:
         if os.path.exists(fallback):
             clips = [fallback]
@@ -52,7 +58,7 @@ def plan_background(niche, needed, rng=None, prober=None,
     usable = [c for c in clips if durations[c] > config.CROSSFADE_S * 2]
     if not usable:
         raise RuntimeError(
-            f"background clips under {theme or backgrounds_dir} are all shorter "
+            f"background clips under {os.path.dirname(clips[0])} are all shorter "
             f"than {config.CROSSFADE_S * 2:.1f}s — add longer clips.")
 
     target = needed + config.CHAIN_BUFFER_S

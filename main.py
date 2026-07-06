@@ -98,7 +98,9 @@ def main() -> int:
     preset = config.NICHES[niche]
 
     try:
-        video.plan_background(niche, 0)   # fail fast: any usable clip at all?
+        # fail fast: any clip at all? (durations don't matter yet — stub the
+        # prober so this doesn't ffprobe every clip twice per run)
+        video.plan_background(niche, 0, prober=lambda _: 999.0)
     except RuntimeError as exc:
         print(f"error: {exc}")
         return 1
@@ -130,6 +132,9 @@ def main() -> int:
     chain = video.plan_background(niche, narration)
     if len(chain) == 1:
         clip, dur = chain[0]
+        if dur < narration + 1.0:
+            print(f"warning: {os.path.basename(clip)} ({dur:.0f}s) barely covers "
+                  f"the narration ({narration:.0f}s); video may cut early")
         offset = random.uniform(0.0, max(dur - narration - 1.0, 0.0))
         print(f"render: {os.path.basename(clip)} @ offset {offset:.1f}s")
         video.export(clip, config.AUDIO_PATH, config.SRT_PATH,
