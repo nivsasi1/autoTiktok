@@ -81,15 +81,26 @@ def plan_background(niche, needed, rng=None, prober=None,
 AMBIENT_EXTS = (".mp3", ".m4a", ".wav", ".ogg")
 
 
-def pick_ambient(niche, ambient_dir=config.AMBIENT_DIR, rng=None):
-    """Random ambient bed from assets/ambient/<niche>/; None means no bed
-    (niches without a folder just get plain narration)."""
-    rng = random if rng is None else rng
+def _ambient_tracks(folder):
     try:
-        tracks = sorted(e.path for e in os.scandir(os.path.join(ambient_dir, niche))
-                        if e.name.lower().endswith(AMBIENT_EXTS))
+        return sorted(e.path for e in os.scandir(folder)
+                      if e.name.lower().endswith(AMBIENT_EXTS))
     except OSError:
-        return None
+        return []
+
+
+def pick_ambient(niche, ambient_dir=config.AMBIENT_DIR, rng=None):
+    """Random ambient bed from assets/ambient/<niche>/; niches without their
+    own tracks fall back to a random bed from any niche folder. None only
+    when there are no tracks at all."""
+    rng = random if rng is None else rng
+    tracks = _ambient_tracks(os.path.join(ambient_dir, niche))
+    if not tracks:
+        try:
+            subdirs = sorted(e.path for e in os.scandir(ambient_dir) if e.is_dir())
+        except OSError:
+            return None
+        tracks = sorted(t for d in subdirs for t in _ambient_tracks(d))
     return rng.choice(tracks) if tracks else None
 
 

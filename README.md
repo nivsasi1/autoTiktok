@@ -32,8 +32,10 @@ answers).
    recordings). Longer clips give the random offset more room to vary.
 5. **(Optional) Ambient beds** — drop audio files (`.mp3`/`.m4a`/`.wav`/`.ogg`)
    in `assets/ambient/<niche>/` and each render loops a random one quietly
-   under the narration (`AMBIENT_VOLUME` in `config.py`). Niches without a
-   folder get plain narration (like the clips, `assets/` stays out of git).
+   under the narration (`AMBIENT_VOLUME` in `config.py`). Niches without
+   their own tracks borrow a random bed from the other niche folders; with
+   no tracks at all it's plain narration (like the clips, `assets/` stays
+   out of git).
    Royalty-free ambience only — TikTok mutes videos over copyright audio.
 
 ## Usage
