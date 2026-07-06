@@ -16,11 +16,21 @@ def test_get_duration_parses_ffprobe_output(monkeypatch):
     assert video.get_duration("clip.mp4") == 12.34
 
 
-@pytest.mark.parametrize("stdout", ["", "N/A\n"])
+@pytest.mark.parametrize("stdout", ["", "N/A\n", "nan\n", "inf\n", "0\n"])
 def test_get_duration_raises_runtime_error_on_unparsable_output(monkeypatch, stdout):
     monkeypatch.setattr(video.subprocess, "run", fake_probe(stdout))
     with pytest.raises(RuntimeError, match=r"ffprobe.*clip\.mp4"):
         video.get_duration("clip.mp4")
+
+
+def test_export_error_includes_ffmpeg_stderr(monkeypatch):
+    def fake_run(*a, **kw):
+        return subprocess.CompletedProcess(
+            args=a, returncode=1, stdout="", stderr="frame=1\nConversion failed!")
+
+    monkeypatch.setattr(video.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="Conversion failed"):
+        video.export("v.mp4", "a.mp3", "s.srt", "o.mp4", 0.0)
 
 
 def test_build_cmd_maps_filtered_video_and_audio():
