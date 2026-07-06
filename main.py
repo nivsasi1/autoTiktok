@@ -28,7 +28,7 @@ def _publish(story, account_name: str, dry_run: bool) -> int:
     """Caption + upload the rendered video; park it in the outbox on failure."""
     account = config.ACCOUNTS[account_name]
     caption = metadata.build_caption(story, account.niche)
-    record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "account": account_name,
+    record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "account": account_name,
               "niche": account.niche, "story_id": story.id, "title": story.title,
               "url": story.url}
     if dry_run:
@@ -105,7 +105,7 @@ def main() -> int:
             # distinct from a scheduler that never fired
             try:
                 post_log.append_post(config.POST_LOG_PATH, {
-                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     "account": args.account, "niche": niche,
                     "story_id": None, "ok": None, "detail": "no story"})
             except OSError as exc:
