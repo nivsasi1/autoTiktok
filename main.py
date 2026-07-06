@@ -33,13 +33,19 @@ def _publish(story, account_name: str, dry_run: bool) -> int:
     if dry_run:
         print(f"dry-run: would post {config.OUTPUT_VID_PATH}")
         print(f"caption: {caption}")
-        post_log.append_post(config.POST_LOG_PATH,
-                             {**record, "ok": None, "detail": "dry-run"})
+        try:
+            post_log.append_post(config.POST_LOG_PATH,
+                                 {**record, "ok": None, "detail": "dry-run"})
+        except OSError as exc:
+            print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
         return 0
     uploader = CookieUploader(account.cookies_file, account_name)
     result = uploader.upload(config.OUTPUT_VID_PATH, caption)
-    post_log.append_post(config.POST_LOG_PATH,
-                         {**record, "ok": result.ok, "detail": result.detail})
+    try:
+        post_log.append_post(config.POST_LOG_PATH,
+                             {**record, "ok": result.ok, "detail": result.detail})
+    except OSError as exc:
+        print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
     if not result.ok:
         os.makedirs(config.OUTBOX_DIR, exist_ok=True)
         parked = os.path.join(config.OUTBOX_DIR, f"{story.id}.mp4")

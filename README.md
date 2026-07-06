@@ -70,12 +70,18 @@ once its audit is approved.
 - Only then register the schedule:
   `powershell -ExecutionPolicy Bypass -File scripts/register_tasks.ps1`
   (`-Remove` unregisters).
+  Note: scheduled runs require the machine on and this user logged in, and a
+  Chrome window will briefly open during each upload (the automation drives a
+  real browser).
 
 ### Day to day
 - History: `posts.jsonl` (one line per attempt).
 - Failed uploads are parked in `outbox/<story_id>.mp4` + `.txt` (the caption) —
   post them by hand, cookies probably need re-exporting.
-- Cookie expiry shows up as a clear "cookies file ... missing/failed" error.
+- A *missing* cookies file gives a clear named error before anything runs.
+  *Expired* cookies (file present but stale) surface as an upload failure —
+  the video is parked in `outbox/` and you re-export cookies and post it by
+  hand.
 
 ## Roadmap
 

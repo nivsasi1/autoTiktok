@@ -54,3 +54,11 @@ def test_upload_exception_becomes_result(tmp_path, monkeypatch):
 def test_uploader_is_abstract():
     with pytest.raises(TypeError):
         Uploader()
+
+
+def test_upload_import_failure_becomes_result(tmp_path, monkeypatch):
+    up = make_uploader(tmp_path)
+    monkeypatch.setitem(sys.modules, "tiktok_uploader", None)
+    monkeypatch.setitem(sys.modules, "tiktok_uploader.upload", None)
+    result = up.upload("out.mp4", "caption")
+    assert result.ok is False

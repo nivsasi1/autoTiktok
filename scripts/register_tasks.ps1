@@ -3,7 +3,12 @@
 param([switch]$Remove)
 
 $repo = Split-Path -Parent $PSScriptRoot
-$python = (Get-Command python).Source
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pythonCmd) {
+    Write-Host "python not found on PATH -- install Python or add it to PATH, then re-run"
+    exit 1
+}
+$python = $pythonCmd.Source
 # keep account names in sync with config.ACCOUNTS
 $tasks = @(
     @{ Name = "autoTiktok drama_main 1";  Account = "drama_main";  At = "10:00" },
@@ -27,8 +32,9 @@ foreach ($t in $tasks) {
         -WorkingDirectory $repo
     $trigger = New-ScheduledTaskTrigger -Daily -At $t.At
     $trigger.RandomDelay = "PT40M"   # 0-40 min drift, human-looking
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
     Register-ScheduledTask -TaskName $t.Name -Action $action `
-        -Trigger $trigger -Force | Out-Null
+        -Trigger $trigger -Settings $settings -Force | Out-Null
     Write-Host "registered $($t.Name) at $($t.At) (+0-40min random)"
 }
 Write-Host "done -- check with: Get-ScheduledTask -TaskName 'autoTiktok*'"

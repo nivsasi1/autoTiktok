@@ -22,9 +22,9 @@ class CookieUploader(Uploader):
         self.account = account
 
     def upload(self, video_path: str, caption: str) -> PostResult:
-        # lazy import: selenium only loads when a real upload happens
-        from tiktok_uploader.upload import upload_video
         try:
+            # lazy import: selenium only loads when a real upload happens
+            from tiktok_uploader.upload import upload_video
             failed = upload_video(video_path, description=caption,
                                   cookies=self.cookies_file)
         except Exception as exc:
