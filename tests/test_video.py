@@ -1,10 +1,11 @@
+import os
 import random
 import subprocess
 
 import pytest
 
 import video
-from video import build_cmd, pick_background
+from video import build_chain_cmd, build_cmd, plan_background
 
 
 def fake_probe(stdout):
@@ -12,43 +13,108 @@ def fake_probe(stdout):
         args=a, returncode=0, stdout=stdout, stderr="")
 
 
-def test_pick_background_chooses_from_folder(tmp_path):
-    for name in ("a.mp4", "b.mp4", "c.mp4"):
-        (tmp_path / name).write_bytes(b"clip")
-    chosen = pick_background(str(tmp_path), "vid.mp4", rng=random.Random(1))
-    assert chosen.endswith(".mp4")
-    assert chosen in [str(tmp_path / n) for n in ("a.mp4", "b.mp4", "c.mp4")]
+def make_theme(tmp_path, folder, names):
+    d = tmp_path / folder
+    d.mkdir()
+    for n in names:
+        (d / n).write_bytes(b"clip")
 
 
-def test_pick_background_finds_clips_in_subfolders(tmp_path):
-    # users organize clips into niche subfolders; the glob must recurse
-    (tmp_path / "horror").mkdir()
-    (tmp_path / "scenic").mkdir()
-    (tmp_path / "horror" / "cave.mp4").write_bytes(b"clip")
-    (tmp_path / "scenic" / "beach.mp4").write_bytes(b"clip")
-    chosen = pick_background(str(tmp_path), "vid.mp4", rng=random.Random(1))
-    assert chosen in (str(tmp_path / "horror" / "cave.mp4"),
-                      str(tmp_path / "scenic" / "beach.mp4"))
+def prober(durs):
+    return lambda p: durs[os.path.basename(p)]
 
 
-def test_pick_background_ignores_non_mp4(tmp_path):
-    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
-    (tmp_path / "only.mp4").write_bytes(b"clip")
-    assert pick_background(str(tmp_path), "vid.mp4") == str(tmp_path / "only.mp4")
+def test_plan_horror_niche_uses_horror_folder(tmp_path):
+    make_theme(tmp_path, "horror", ["cave.mp4"])
+    make_theme(tmp_path, "scenic", ["beach.mp4"])
+    plan = plan_background("horror", 10, rng=random.Random(1),
+                           prober=prober({"cave.mp4": 60, "beach.mp4": 60}),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    assert [os.path.basename(c) for c, _ in plan] == ["cave.mp4"]
 
 
-def test_pick_background_falls_back_when_folder_empty(tmp_path):
+def test_plan_other_niches_never_use_reserved_folders(tmp_path):
+    for folder in ("horror", "abstract", "food", "scenic"):
+        make_theme(tmp_path, folder, [f"{folder}.mp4"])
+    durs = prober({f"{f}.mp4": 60 for f in ("horror", "abstract", "food", "scenic")})
+    for seed in range(8):   # across seeds, drama never draws the horror theme
+        plan = plan_background("drama", 10, rng=random.Random(seed), prober=durs,
+                               backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+        assert "horror" not in plan[0][0]
+
+
+def test_plan_single_clip_when_it_covers_narration(tmp_path):
+    make_theme(tmp_path, "scenic", ["long.mp4"])
+    plan = plan_background("drama", 30, rng=random.Random(1),
+                           prober=prober({"long.mp4": 60.0}),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    assert len(plan) == 1
+    assert plan[0][1] == 60.0
+
+
+def test_plan_chains_same_folder_until_covered(tmp_path):
+    make_theme(tmp_path, "scenic", ["a.mp4", "b.mp4", "c.mp4"])
+    durs = {"a.mp4": 12.0, "b.mp4": 12.0, "c.mp4": 12.0}
+    plan = plan_background("drama", 30, rng=random.Random(2), prober=prober(durs),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    assert len(plan) == 3   # 12 + 11.7 + 11.7 = 35.4 >= 31
+    assert all(f"scenic{os.sep}" in c for c, _ in plan)
+    covered = sum(d for _, d in plan) - 0.3 * (len(plan) - 1)
+    assert covered >= 31
+
+
+def test_plan_repeats_clips_when_folder_runs_short(tmp_path):
+    make_theme(tmp_path, "scenic", ["a.mp4", "b.mp4"])
+    plan = plan_background("drama", 40, rng=random.Random(3),
+                           prober=prober({"a.mp4": 12.0, "b.mp4": 12.0}),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    names = [os.path.basename(c) for c, _ in plan]
+    assert len(names) >= 4          # needs ~4 x 12s for 41s of coverage
+    assert len(set(names)) == 2     # only the two clips, repeated
+
+
+def test_plan_widens_when_theme_folder_empty(tmp_path):
+    (tmp_path / "abstract").mkdir()             # shared theme exists but empty
+    make_theme(tmp_path, "horror", ["cave.mp4"])
+    plan = plan_background("drama", 10, rng=random.Random(1),
+                           prober=prober({"cave.mp4": 60}),
+                           backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+    assert os.path.basename(plan[0][0]) == "cave.mp4"   # soft fallback to any clip
+
+
+def test_plan_falls_back_to_vid_then_errors(tmp_path):
     fallback = tmp_path / "vid.mp4"
     fallback.write_bytes(b"clip")
-    empty = tmp_path / "backgrounds"    # does not exist
-    assert pick_background(str(empty), str(fallback)) == str(fallback)
-
-
-def test_pick_background_raises_when_nothing(tmp_path):
-    empty = tmp_path / "backgrounds"
-    missing_fallback = tmp_path / "vid.mp4"
+    plan = plan_background("drama", 10, rng=random.Random(1),
+                           prober=prober({"vid.mp4": 60}),
+                           backgrounds_dir=str(tmp_path / "none"),
+                           fallback=str(fallback))
+    assert plan == [(str(fallback), 60)]
     with pytest.raises(RuntimeError, match="no background clip"):
-        pick_background(str(empty), str(missing_fallback))
+        plan_background("drama", 10, backgrounds_dir=str(tmp_path / "none"),
+                        fallback=str(tmp_path / "missing.mp4"))
+
+
+def test_plan_rejects_only_tiny_clips(tmp_path):
+    make_theme(tmp_path, "scenic", ["blip.mp4"])
+    with pytest.raises(RuntimeError, match="shorter"):
+        plan_background("drama", 10, rng=random.Random(1),
+                        prober=prober({"blip.mp4": 0.4}),
+                        backgrounds_dir=str(tmp_path), fallback="vid.mp4")
+
+
+def test_build_chain_cmd_crossfades_and_maps(tmp_path):
+    chain = [("a.mp4", 12.0), ("b.mp4", 12.0), ("c.mp4", 12.0)]
+    cmd = build_chain_cmd(chain, "output.mp3", "subtitles.srt", "out.mp4")
+    joined = " ".join(cmd)
+    assert cmd.count("-i") == 4                      # 3 clips + audio
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert fc.count("xfade") == 2                    # n-1 joins
+    assert "offset=11.700" in fc and "offset=23.400" in fc
+    assert fc.count("scale=1080:1920") == 3          # every clip normalized
+    assert fc.count("subtitles=") == 1
+    assert "-map [v] -map 3:a" in joined             # audio is input index n
+    assert "-shortest" in joined
 
 
 def test_get_duration_parses_ffprobe_output(monkeypatch):

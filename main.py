@@ -98,7 +98,7 @@ def main() -> int:
     preset = config.NICHES[niche]
 
     try:
-        background = video.pick_background()   # random clip, or vid.mp4 fallback
+        video.plan_background(niche, 0)   # fail fast: any usable clip at all?
     except RuntimeError as exc:
         print(f"error: {exc}")
         return 1
@@ -126,10 +126,19 @@ def main() -> int:
     subtitles.write_srt(boundaries, config.SRT_PATH, preset.words_per_line)
     print(f"subtitles: {config.SRT_PATH} ({preset.words_per_line} words/line)")
 
-    offset = video.pick_offset(background, config.AUDIO_PATH)
-    print(f"render: {os.path.basename(background)} @ offset {offset:.1f}s")
-    video.export(background, config.AUDIO_PATH,
-                 config.SRT_PATH, config.OUTPUT_VID_PATH, offset)
+    narration = video.get_duration(config.AUDIO_PATH)
+    chain = video.plan_background(niche, narration)
+    if len(chain) == 1:
+        clip, dur = chain[0]
+        offset = random.uniform(0.0, max(dur - narration - 1.0, 0.0))
+        print(f"render: {os.path.basename(clip)} @ offset {offset:.1f}s")
+        video.export(clip, config.AUDIO_PATH, config.SRT_PATH,
+                     config.OUTPUT_VID_PATH, offset)
+    else:
+        names = ", ".join(os.path.basename(c) for c, _ in chain)
+        print(f"render: {len(chain)}-clip crossfade chain ({names})")
+        video.export(chain, config.AUDIO_PATH, config.SRT_PATH,
+                     config.OUTPUT_VID_PATH)
 
     try:
         record_used_id(config.STATE_PATH, story.id)

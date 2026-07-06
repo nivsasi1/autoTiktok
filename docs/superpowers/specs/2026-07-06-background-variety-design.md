@@ -1,7 +1,34 @@
 # autoTiktok — Background variety (+ account rename, finding-#1 fix)
 
-Date: 2026-07-06
+Date: 2026-07-06 (rev 2: themed folders + crossfaded clip chains)
 Status: approved
+
+## Rev 2 — themes + chains (user-directed)
+
+Supersedes the single-random-clip design below:
+
+- **Theme folders**: a subfolder of `assets/backgrounds/` named after a niche is
+  reserved for it (`horror/` → horror niche). Niches without a matching folder
+  draw a random folder from the unreserved pool (`abstract/`, `food/`,
+  `scenic/`) — so horror videos always get horror backgrounds and non-horror
+  never does. Folder names are the config.
+- **Clip chains**: user clips are short, so `plan_background(niche, needed)`
+  shuffles the chosen theme folder and chains whole clips until they cover the
+  narration (+1s buffer), staying within one folder per video; clips repeat if
+  the folder runs short. If one random clip alone covers the narration it is
+  used solo with the classic random start offset.
+- **Crossfades**: chained joins use 0.3s xfade (CROSSFADE_S), each join costing
+  0.3s of coverage in the planning math. Each clip is normalized
+  (1080x1920 center-crop, 30fps, yuv420p) before the joins, so mixed-resolution
+  /fps downloads chain cleanly in ONE ffmpeg pass (`build_chain_cmd`).
+- **Split interplay**: `needed` is per-rendered-video. When the >100s
+  two-part splitter lands, each part plans its own ~50-80s chain — fewer
+  repeats per part, as intended.
+- Guards: clips ≤ 2×CROSSFADE_S rejected with a clear error (would stall the
+  planner); empty theme folder widens to any clip, then `vid.mp4`, then error.
+- `pick_offset` absorbed into `main` (single-clip offset math inlined);
+  live-verified: 3 mismatched synthetic clips (360p@24/720p@30/portrait@25) →
+  1080x1920@30 output, exact narration length.
 
 ## Context
 
