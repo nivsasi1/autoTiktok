@@ -40,3 +40,11 @@ def test_seeded_rng_is_deterministic():
     a = build_caption(story("T"), "drama", rng=random.Random(42))
     b = build_caption(story("T"), "drama", rng=random.Random(42))
     assert a == b
+
+
+def test_no_space_title_hard_cuts_at_limit():
+    # a single very long token (e.g. a URL-ish title) has no word boundary;
+    # a hard cut + ellipsis is the accepted fallback
+    cap = build_caption(story("x" * 150), "drama", rng=random.Random(1))
+    head = cap.split(" #")[0]
+    assert head == "x" * config.CAPTION_TITLE_CHARS + "…"

@@ -5,7 +5,7 @@ import config
 
 def build_caption(story, niche: str, rng=None) -> str:
     """Title (trimmed at a word boundary) + fixed hashtags + 2 rotating."""
-    rng = rng or random
+    rng = random if rng is None else rng
     title = story.title
     if len(title) > config.CAPTION_TITLE_CHARS:
         cut = title[: config.CAPTION_TITLE_CHARS]
