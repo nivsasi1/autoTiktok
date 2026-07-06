@@ -78,31 +78,6 @@ def test_fetch_walks_posts_and_assembles_story(monkeypatch):
                          "https://reddit/good1/.rss?limit=25"]
 
 
-def test_fetch_skips_post_with_empty_link(monkeypatch):
-    import config
-    from sources import askreddit
-
-    calls = []
-    good_answer = "<p>" + "a decent answer to the question here. " * 2 + "</p>"
-
-    def post(pid, link):
-        return SimpleNamespace(id=pid, kind="t3", author="/u/asker",
-                               title=f"Question {pid}", link=link, html="")
-
-    def fake_fetch(url):
-        calls.append(url)
-        if "hot.rss" in url:
-            return [post("nolink", ""), post("ok1", "https://reddit/ok1/")]
-        if "/ok1/" in url:
-            return [centry(id=f"c{i}", html=good_answer) for i in range(3)]
-        raise AssertionError(f"comments fetched from bogus url {url!r}")
-
-    monkeypatch.setattr(askreddit, "fetch_entries", fake_fetch)
-    story = askreddit.AskRedditSource(config.NICHES["askreddit"], set()).fetch()
-    assert story.id == "ok1"
-    assert calls[1:] == ["https://reddit/ok1/.rss?limit=25"]
-
-
 def test_fetch_skips_nsfw_question(monkeypatch):
     import config
     from sources import askreddit

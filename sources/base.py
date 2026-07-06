@@ -139,12 +139,15 @@ def fetch_entries(url: str) -> list[SimpleNamespace]:
     for e in root.findall("atom:entry", ATOM_NS):
         kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")
         link = e.find("atom:link", ATOM_NS)
+        href = link.get("href") if link is not None else ""
+        if not href:            # every consumer needs a usable permalink
+            continue
         entries.append(SimpleNamespace(
             id=eid,
             kind=kind,          # "t3" post, "t1" comment
             title=e.findtext("atom:title", "", ATOM_NS),
             author=e.findtext("atom:author/atom:name", "", ATOM_NS),
-            link=link.get("href") if link is not None else "",
+            link=href,
             html=e.findtext("atom:content", "", ATOM_NS) or "",
         ))
     return entries

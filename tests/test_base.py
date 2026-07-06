@@ -211,3 +211,13 @@ def test_html_to_text_compound_prose_and_real_trailer():
             "<span>[comments]</span>")
     out = " ".join(html_to_text(frag).split())
     assert out == "I saw a post submitted by /u/foo earlier. The drama grew."
+
+
+def test_fetch_entries_drops_linkless_entries(monkeypatch):
+    from sources import base
+    feed = FEED.replace(
+        '<link href="https://www.reddit.com/r/stories/comments/abc12/tale/"/>',
+        "")
+    monkeypatch.setattr(base, "fetch_text", lambda url: feed)
+    # the link-less t3 entry is filtered at the source; consumers never see it
+    assert [e.id for e in base.fetch_entries("https://x")] == ["xyz99"]

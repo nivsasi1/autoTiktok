@@ -38,8 +38,6 @@ class AskRedditSource(ContentSource):
         for post in fetch_entries(LISTING_URL):
             if not qualifies(post, self.used_ids):
                 continue
-            if not post.link:   # no link, no comments feed to build
-                continue
             comments = fetch_entries(post.link.rstrip("/") + "/.rss?limit=25")
             answers = []
             for c in comments:  # feed order ≈ best ranking
