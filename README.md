@@ -21,10 +21,15 @@ answers).
    ```
    copy .env.example .env    # REDDIT_USER_AGENT=autoTiktok/1.0 by u/<you>
    ```
-4. **Background clip** — save a gameplay video as `vid.mp4` in the repo root
-   (e.g. https://www.youtube.com/watch?v=Pt5_GSKIWQM — 10 min no-copyright
-   Minecraft parkour). Longer clip = more variety, since every render starts
-   at a random offset.
+4. **Background clips** — drop one or more `.mp4` files in `assets/backgrounds/`.
+   Each render picks a random clip at a random start offset, so no two videos
+   look alike. (A single `vid.mp4` in the repo root still works as a fallback.)
+
+   **This matters for reach.** TikTok's originality filter flags reused
+   backgrounds — the ubiquitous Minecraft parkour / Subway Surfers / GTA clips
+   are heavily fingerprinted and will get videos throttled. Use **varied,
+   watermark-free, less-common** footage (satisfying/aesthetic loops, your own
+   recordings). Longer clips give the random offset more room to vary.
 
 ## Usage
 
@@ -57,16 +62,16 @@ once its audit is approved.
 ### One-time setup per account
 1. Log into the TikTok account in your browser.
 2. Export cookies with a "Get cookies.txt LOCALLY"-style extension while on
-   tiktok.com; save as `cookies/drama_main.txt` (resp. `horror_main.txt`).
+   tiktok.com; save as `cookies/redditregrets.txt` (resp. `nosleeptonight.txt`).
    Cookies are credentials: the folder is gitignored — keep it that way.
 
 ### Warm-up ramp (do this before scheduling)
 - Week one: post 2-3 videos per account manually in the app, browse a little —
   a fresh account that instantly posts on a robotic schedule is the classic
   shadowban recipe.
-- Then: `python main.py --post --account drama_main --dry-run` (renders and
+- Then: `python main.py --post --account redditregrets --dry-run` (renders and
   shows the caption, uploads nothing).
-- Then 2-3 watched live posts: `python main.py --post --account drama_main`.
+- Then 2-3 watched live posts: `python main.py --post --account redditregrets`.
 - Only then register the schedule:
   `powershell -ExecutionPolicy Bypass -File scripts/register_tasks.ps1`
   (`-Remove` unregisters).
