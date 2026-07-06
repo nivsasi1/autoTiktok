@@ -1,82 +1,56 @@
-import json
-import requests
-import wave
-import contextlib
-import subprocess
+import argparse
+import os
+import sys
+
+import config
 import subtitles
+import tts
+import video
+from sources.askreddit import AskRedditSource
+from sources.base import load_used_ids, record_used_id
+from sources.reddit_text import RedditTextSource
 
-headers = {
-    "Accept" : "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
-    "Accept-Language" : "en-US,en;q=0.9",
-    "Sec-Fetch-Dest" : "document",
-}
 
-AUDIO_FILE_PATH = "outputw.wav"
-SUBTITLES_FILE_PATH = "subtitles.srt"
-TRANSCRIPT_FILE_PATH = "transcript.srt"
-INPUT_VID_FILE_PATH = "vid.mp4"
-OUTPUT_VID_FILE_PATH = "out.mp4"
+def build_source(niche: str, preset, used_ids):
+    if niche == "askreddit":
+        return AskRedditSource(preset, used_ids)
+    return RedditTextSource(niche, preset, used_ids)
 
-def main():
-    js = getRedditPost(0, 1) 
-    print(js)
-    subtitles.analyzeRedditPost(js)
-    generateAudioFile(js, AUDIO_FILE_PATH)
-    exportVideo()
 
-def exportVideo():
-    #ffmpeg 
-    # -i 
-    # vid.mp4
-    # -i 
-    # outputw.wav 
-    # -filter_complex 
-    # "fps=60,scale=1080x1920:force_original_aspect_ratio=increase,crop=1080:1920:1080:40,subtitles='subtitles.srt':force_style='FontName=PT Sans,Alignment=10,Outline=0,OutlineColour=&H100000000,Shadow=0,Fontsize=18,MarginL=20,MarginV=25'" 
-    # -shortest 
-    # -c:v 
-    # h264_videotoolbox 
-    # -b:v 
-    # 1000k 
-    # -map 1  
-    # out3.mp4
-    subprocess.call(['ffmpeg',
-                    '-y',
-                    '-i',
-                    INPUT_VID_FILE_PATH,
-                    '-i',
-                    AUDIO_FILE_PATH,
-                    '-filter_complex', 
-                    "scale=1080x1920:force_original_aspect_ratio='increase',crop='1080:1920:1080:40',subtitles='subtitles.srt':force_style='FontName=PT Sans,Bold=1,Alignment=10,Outline=0,OutlineColour=&H100000000,Shadow=0,Fontsize=20,MarginL=20,MarginV=25'",
-                    '-shortest',
-                    '-c:v',
-                    'h264_videotoolbox',
-                    '-b:v',
-                    '1000k',
-                    '-map',
-                    '1',
-                    OUTPUT_VID_FILE_PATH
-                     ])
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Reddit story -> TikTok video")
+    parser.add_argument("--niche", choices=sorted(config.NICHES),
+                        default=config.DEFAULT_NICHE)
+    args = parser.parse_args()
+    preset = config.NICHES[args.niche]
 
-def getRedditPost(index: int, amount: int):
-    if(index >= amount):
-        return ""
-    url = f'https://www.reddit.com/r/stories/new.json?sort=new&limit={amount}'
-    json_data = requests.get(url, headers=headers)
-    js = json.loads(json_data.text)["data"]["children"][index]["data"]["selftext"]
-    return js
+    if not os.path.exists(config.INPUT_VID_PATH):
+        print(f"error: background clip {config.INPUT_VID_PATH} not found "
+              "(see README for a source)")
+        return 1
 
-# larynx -v southern_english_female-glow_tts --length-scale 1 -q "high" 
-def generateAudioFile(content: str, toDir: str):
-    output_audio = open(toDir, "w")
-    subprocess.call(['larynx','-v',"southern_english_female-glow_tts", content,"--length-scale","1","-q","high"], stdout=output_audio)
+    used_ids = load_used_ids(config.STATE_PATH)
+    story = build_source(args.niche, preset, used_ids).fetch()
+    if story is None:
+        print(f"no qualifying {args.niche} post right now — try again later")
+        return 0
+    print(f"story: {story.title}\n       {story.url}")
 
-def getAudioLength(fileName: str):
-    with contextlib.closing(wave.open(fileName,'r')) as f:
-        frames = f.getnframes()
-        rate = f.getframerate()
-        duration = frames / float(rate)
-        return duration 
+    print(f"tts: {preset.voice}, {len(story.text)} chars")
+    boundaries = tts.synthesize(story.text, config.AUDIO_PATH, preset.voice)
 
-main()
-# exportVideo()
+    subtitles.write_srt(boundaries, config.SRT_PATH, preset.words_per_line)
+    print(f"subtitles: {config.SRT_PATH} ({preset.words_per_line} words/line)")
+
+    offset = video.pick_offset(config.INPUT_VID_PATH, config.AUDIO_PATH)
+    print(f"render: background offset {offset:.1f}s")
+    video.export(config.INPUT_VID_PATH, config.AUDIO_PATH,
+                 config.SRT_PATH, config.OUTPUT_VID_PATH, offset)
+
+    record_used_id(config.STATE_PATH, story.id)
+    print(f"done -> {config.OUTPUT_VID_PATH}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
