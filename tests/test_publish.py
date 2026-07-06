@@ -34,6 +34,8 @@ def test_dry_run_logs_and_never_uploads(tmp_path, monkeypatch):
     assert main._publish(story(), "drama_main", dry_run=True) == 0
     posts = read_posts(config.POST_LOG_PATH)
     assert posts[0]["ok"] is None and posts[0]["story_id"] == "s1"
+    # url is logged so a parked post can be traced back to its thread by hand
+    assert posts[0]["url"] == "u"
 
 
 def test_success_logs_and_keeps_video(tmp_path, monkeypatch):

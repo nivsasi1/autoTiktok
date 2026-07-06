@@ -29,7 +29,8 @@ def _publish(story, account_name: str, dry_run: bool) -> int:
     account = config.ACCOUNTS[account_name]
     caption = metadata.build_caption(story, account.niche)
     record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "account": account_name,
-              "niche": account.niche, "story_id": story.id, "title": story.title}
+              "niche": account.niche, "story_id": story.id, "title": story.title,
+              "url": story.url}
     if dry_run:
         print(f"dry-run: would post {config.OUTPUT_VID_PATH}")
         print(f"caption: {caption}")
