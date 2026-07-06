@@ -100,6 +100,16 @@ def main() -> int:
     story = build_source(niche, preset, used_ids).fetch()
     if story is None:
         print(f"no qualifying {niche} post right now — try again later")
+        if args.post:
+            # keep posts.jsonl a full cadence audit: a dry subreddit day is
+            # distinct from a scheduler that never fired
+            try:
+                post_log.append_post(config.POST_LOG_PATH, {
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "account": args.account, "niche": niche,
+                    "story_id": None, "ok": None, "detail": "no story"})
+            except OSError as exc:
+                print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
         return 0
     print(f"story: {story.title}\n       {story.url}")
 
