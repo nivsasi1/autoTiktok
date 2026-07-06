@@ -26,7 +26,12 @@ def get_duration(path: str) -> float:
         capture_output=True, text=True)
     if res.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {path}: {res.stderr.strip()}")
-    return float(res.stdout.strip())
+    try:
+        return float(res.stdout.strip())
+    except ValueError as exc:   # exit 0 but empty or "N/A" duration
+        raise RuntimeError(
+            f"ffprobe returned no duration for {path} "
+            f"(got {res.stdout.strip()!r})") from exc
 
 
 def pick_offset(vid_path: str, audio_path: str) -> float:

@@ -1,4 +1,26 @@
+import subprocess
+
+import pytest
+
+import video
 from video import build_cmd
+
+
+def fake_probe(stdout):
+    return lambda *a, **kw: subprocess.CompletedProcess(
+        args=a, returncode=0, stdout=stdout, stderr="")
+
+
+def test_get_duration_parses_ffprobe_output(monkeypatch):
+    monkeypatch.setattr(video.subprocess, "run", fake_probe("12.34\n"))
+    assert video.get_duration("clip.mp4") == 12.34
+
+
+@pytest.mark.parametrize("stdout", ["", "N/A\n"])
+def test_get_duration_raises_runtime_error_on_unparsable_output(monkeypatch, stdout):
+    monkeypatch.setattr(video.subprocess, "run", fake_probe(stdout))
+    with pytest.raises(RuntimeError, match=r"ffprobe.*clip\.mp4"):
+        video.get_duration("clip.mp4")
 
 
 def test_build_cmd_maps_filtered_video_and_audio():
