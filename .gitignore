@@ -2,7 +2,9 @@
 *.mp3
 *.wav
 out.mp4
+out_part*.mp4
 vid.mp4
+queue/
 *.srt
 *.tmp
 transcript.*

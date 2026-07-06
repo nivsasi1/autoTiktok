@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import config
 import main
+import pending
 from uploader.base import PostResult
 from post_log import read_posts
 
@@ -78,6 +79,67 @@ def test_missing_cookies_parks_video_not_crash(tmp_path, monkeypatch):
     assert (tmp_path / "outbox" / "s1.mp4").read_bytes() == b"video"
     rec = read_posts(config.POST_LOG_PATH)[0]
     assert rec["ok"] is False and "RuntimeError" in rec["detail"]
+
+
+def queue_part2(tmp_path, monkeypatch, account="redditregrets"):
+    monkeypatch.setattr(config, "QUEUE_DIR", str(tmp_path / "queue"))
+    src = tmp_path / "part2.mp4"
+    src.write_bytes(b"part2")
+    return pending.enqueue(config.QUEUE_DIR, str(src),
+                           {"story_id": "s1", "part": 2, "account": account,
+                            "niche": "drama", "title": "A tale", "url": "u",
+                            "caption": "A tale (Part 2/2) #x"})
+
+
+def test_queued_part_posts_before_fetching_anything(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    queue_part2(tmp_path, monkeypatch)
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(True, "up")))
+    # cookies pre-check must pass for a live post
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("k=v", encoding="utf-8")
+    monkeypatch.setattr(config.ACCOUNTS["redditregrets"], "cookies_file",
+                        str(cookies))
+    monkeypatch.setattr(
+        main, "build_source",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fetched")))
+    monkeypatch.setattr(config, "POST_JITTER_MAX_S", 0)
+    monkeypatch.setattr(
+        sys, "argv", ["main.py", "--post", "--account", "redditregrets"])
+    assert main.main() == 0
+    rec = read_posts(config.POST_LOG_PATH)[0]
+    assert rec["ok"] is True and rec["part"] == 2 and rec["story_id"] == "s1"
+    # entry consumed: queue is empty afterwards
+    assert pending.next_entry(config.QUEUE_DIR, "redditregrets") is None
+
+
+def test_dry_run_reports_queued_part_but_keeps_it(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    queue_part2(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main, "CookieUploader",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("constructed")))
+    monkeypatch.setattr(
+        sys, "argv",
+        ["main.py", "--post", "--account", "redditregrets", "--dry-run"])
+    assert main.main() == 0
+    rec = read_posts(config.POST_LOG_PATH)[0]
+    assert rec["ok"] is None and rec["part"] == 2
+    # still queued for the real run
+    assert pending.next_entry(config.QUEUE_DIR, "redditregrets") is not None
+
+
+def test_failed_queued_part_parks_with_part_suffix(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    qvideo = queue_part2(tmp_path, monkeypatch)
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(False, "boom")))
+    story_ns = SimpleNamespace(id="s1", title="A tale", url="u")
+    assert main._publish(story_ns, "redditregrets", dry_run=False, part=2,
+                         video_path=qvideo, caption="cap") == 1
+    assert (tmp_path / "outbox" / "s1_p2.mp4").read_bytes() == b"part2"
+    assert (tmp_path / "outbox" / "s1_p2.txt").read_text(encoding="utf-8") == "cap"
 
 
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):

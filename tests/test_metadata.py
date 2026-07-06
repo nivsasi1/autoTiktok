@@ -42,6 +42,11 @@ def test_seeded_rng_is_deterministic():
     assert a == b
 
 
+def test_part_label_lands_after_title_before_tags():
+    cap = build_caption(story("A tale"), "horror", rng=random.Random(1), part=2)
+    assert cap.startswith("A tale (Part 2/2) #")
+
+
 def test_no_space_title_hard_cuts_at_limit():
     # a single very long token (e.g. a URL-ish title) has no word boundary;
     # a hard cut + ellipsis is the accepted fallback

@@ -171,3 +171,55 @@ def test_build_cmd_maps_filtered_video_and_audio():
     assert "libx264" in joined
     assert "subtitles=subtitles.srt" in joined
     assert cmd[-1] == "out.mp4"
+
+
+def test_build_cmd_with_ambient_loops_and_mixes_quietly():
+    cmd = build_cmd("vid.mp4", "output.mp3", "subtitles.srt", "out.mp4",
+                    bg_offset=0.0, ambient="drone.mp3", ambient_vol=0.12)
+    joined = " ".join(cmd)
+    assert "-stream_loop -1 -i drone.mp3" in joined
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[2:a]volume=0.12" in fc              # bed is quiet
+    assert "amix=inputs=2:duration=first:normalize=0" in fc
+    assert "-map [v] -map [a]" in joined         # mixed audio, not the raw mp3
+
+
+def test_build_chain_cmd_with_ambient_appends_input_after_audio():
+    chain = [("a.mp4", 12.0), ("b.mp4", 12.0)]
+    cmd = build_chain_cmd(chain, "output.mp3", "subtitles.srt", "out.mp4",
+                          ambient="drone.mp3")
+    joined = " ".join(cmd)
+    assert cmd.count("-i") == 4                  # 2 clips + narration + ambient
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[3:a]volume=" in fc                  # ambient is input n+1
+    assert "[2:a][amb]amix" in fc                # mixed onto the narration
+    assert "-map [v] -map [a]" in joined
+
+
+def test_pick_ambient_uses_niche_folder_or_none(tmp_path):
+    d = tmp_path / "horror"
+    d.mkdir()
+    (d / "drone.mp3").write_bytes(b"a")
+    (d / "notes.txt").write_bytes(b"x")          # non-audio ignored
+    got = video.pick_ambient("horror", ambient_dir=str(tmp_path),
+                             rng=random.Random(1))
+    assert os.path.basename(got) == "drone.mp3"
+    assert video.pick_ambient("drama", ambient_dir=str(tmp_path)) is None
+    assert video.pick_ambient("horror", ambient_dir=str(tmp_path / "no")) is None
+
+
+def test_cut_audio_builds_accurate_seek_cmd(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(args=cmd, returncode=0,
+                                           stdout="", stderr="")
+
+    monkeypatch.setattr(video.subprocess, "run", fake_run)
+    video.cut_audio("output.mp3", "p1.mp3", 0.0, 58.25)
+    joined = " ".join(seen["cmd"])
+    assert joined.index("-i output.mp3") < joined.index("-ss")  # output-side seek
+    assert "-t 58.250" in joined
+    video.cut_audio("output.mp3", "p2.mp3", 58.25)
+    assert "-t" not in seen["cmd"]               # tail slice runs to the end
