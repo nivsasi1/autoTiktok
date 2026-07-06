@@ -60,6 +60,8 @@ def test_record_used_id_survives_crash_mid_write(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         record_used_id(p, "def")
     assert load_used_ids(p) == {"abc"}   # old state intact, not reset to empty
+    # and the failed temp was cleaned up, not orphaned
+    assert [f.name for f in tmp_path.iterdir()] == ["state.json"]
 
 
 def test_clean_url_in_parens_leaves_no_orphan_bracket():

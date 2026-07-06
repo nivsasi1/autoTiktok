@@ -1,6 +1,5 @@
 import html
 import json
-import os
 import re
 import time
 from abc import ABC, abstractmethod
@@ -11,6 +10,7 @@ from xml.etree import ElementTree
 import requests
 
 import config
+from util import atomic_path
 
 # Lazy URL match with a lookahead: stops before trailing punctuation instead
 # of swallowing it, so "https://x.com/a." keeps its sentence-ending period.
@@ -83,12 +83,11 @@ def load_used_ids(path: str) -> set[str]:
 def record_used_id(path: str, story_id: str) -> None:
     ids = load_used_ids(path)
     ids.add(story_id)
-    # temp file + replace: a crash mid-write must not corrupt the state file
+    # atomic write: a crash mid-write must not corrupt the state file
     # (load_used_ids would silently reset to empty and re-enable reposts)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(sorted(ids), f)
-    os.replace(tmp, path)
+    with atomic_path(path) as tmp:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(ids), f)
 
 
 def fetch_text(url: str) -> str:
