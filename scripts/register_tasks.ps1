@@ -12,10 +12,10 @@ if (-not $pythonCmd) {
 $python = $pythonCmd.Source
 # keep account names in sync with config.ACCOUNTS
 $tasks = @(
-    @{ Name = "drama_main 1";  Account = "drama_main";  At = "10:00" },
-    @{ Name = "drama_main 2";  Account = "drama_main";  At = "18:30" },
-    @{ Name = "horror_main 1"; Account = "horror_main"; At = "12:00" },
-    @{ Name = "horror_main 2"; Account = "horror_main"; At = "20:30" }
+    @{ Name = "redditregrets 1";  Account = "redditregrets";  At = "10:00" },
+    @{ Name = "redditregrets 2";  Account = "redditregrets";  At = "18:30" },
+    @{ Name = "nosleeptonight 1"; Account = "nosleeptonight"; At = "12:00" },
+    @{ Name = "nosleeptonight 2"; Account = "nosleeptonight"; At = "20:30" }
 )
 
 if ($Remove) {

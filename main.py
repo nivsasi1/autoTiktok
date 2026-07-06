@@ -15,6 +15,7 @@ import video
 from sources.askreddit import AskRedditSource
 from sources.base import load_used_ids, record_used_id
 from sources.reddit_text import RedditTextSource
+from uploader.base import PostResult
 from uploader.tiktok_cookies import CookieUploader
 
 
@@ -40,8 +41,13 @@ def _publish(story, account_name: str, dry_run: bool) -> int:
         except OSError as exc:
             print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
         return 0
-    uploader = CookieUploader(account.cookies_file, account_name)
-    result = uploader.upload(config.OUTPUT_VID_PATH, caption)
+    try:
+        # a missing/locked cookies file raises in the constructor; catch it so
+        # the rendered video is parked in the outbox, not stranded by a crash
+        uploader = CookieUploader(account.cookies_file, account_name)
+        result = uploader.upload(config.OUTPUT_VID_PATH, caption)
+    except Exception as exc:
+        result = PostResult(False, f"{exc.__class__.__name__}: {exc}")
     try:
         post_log.append_post(config.POST_LOG_PATH,
                              {**record, "ok": result.ok, "detail": result.detail})
@@ -91,9 +97,10 @@ def main() -> int:
         niche = args.niche or config.DEFAULT_NICHE
     preset = config.NICHES[niche]
 
-    if not os.path.exists(config.INPUT_VID_PATH):
-        print(f"error: background clip {config.INPUT_VID_PATH} not found "
-              "(see README for a source)")
+    try:
+        background = video.pick_background()   # random clip, or vid.mp4 fallback
+    except RuntimeError as exc:
+        print(f"error: {exc}")
         return 1
 
     used_ids = load_used_ids(config.STATE_PATH)
@@ -119,9 +126,9 @@ def main() -> int:
     subtitles.write_srt(boundaries, config.SRT_PATH, preset.words_per_line)
     print(f"subtitles: {config.SRT_PATH} ({preset.words_per_line} words/line)")
 
-    offset = video.pick_offset(config.INPUT_VID_PATH, config.AUDIO_PATH)
-    print(f"render: background offset {offset:.1f}s")
-    video.export(config.INPUT_VID_PATH, config.AUDIO_PATH,
+    offset = video.pick_offset(background, config.AUDIO_PATH)
+    print(f"render: {os.path.basename(background)} @ offset {offset:.1f}s")
+    video.export(background, config.AUDIO_PATH,
                  config.SRT_PATH, config.OUTPUT_VID_PATH, offset)
 
     try:

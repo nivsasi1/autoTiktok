@@ -1,8 +1,28 @@
+import glob
 import math
+import os
 import random
 import subprocess
 
 import config
+
+
+def pick_background(backgrounds_dir=config.BACKGROUNDS_DIR,
+                   fallback=config.INPUT_VID_PATH, rng=None) -> str:
+    """A random clip from backgrounds_dir, else the single-clip fallback.
+
+    Rotating clips (on top of the random start offset) is the main defense
+    against TikTok's unoriginal-content flag on reused backgrounds.
+    """
+    rng = random if rng is None else rng
+    clips = sorted(glob.glob(os.path.join(backgrounds_dir, "*.mp4")))
+    if clips:
+        return rng.choice(clips)
+    if os.path.exists(fallback):
+        return fallback
+    raise RuntimeError(
+        f"no background clip found — drop one or more .mp4 files in "
+        f"{backgrounds_dir}/ (varied, watermark-free) or add a {fallback}.")
 
 
 def build_cmd(vid, audio, srt, out, bg_offset,

@@ -21,10 +21,15 @@ answers).
    ```
    copy .env.example .env    # REDDIT_USER_AGENT=autoTiktok/1.0 by u/<you>
    ```
-4. **Background clip** — save a gameplay video as `vid.mp4` in the repo root
-   (e.g. https://www.youtube.com/watch?v=Pt5_GSKIWQM — 10 min no-copyright
-   Minecraft parkour). Longer clip = more variety, since every render starts
-   at a random offset.
+4. **Background clips** — drop one or more `.mp4` files in `assets/backgrounds/`.
+   Each render picks a random clip at a random start offset, so no two videos
+   look alike. (A single `vid.mp4` in the repo root still works as a fallback.)
+
+   **This matters for reach.** TikTok's originality filter flags reused
+   backgrounds — the ubiquitous Minecraft parkour / Subway Surfers / GTA clips
+   are heavily fingerprinted and will get videos throttled. Use **varied,
+   watermark-free, less-common** footage (satisfying/aesthetic loops, your own
+   recordings). Longer clips give the random offset more room to vary.
 
 ## Usage
 

@@ -18,7 +18,8 @@ ASKREDDIT_MAX_ANSWER_CHARS = 350
 # artifact paths (repo-root relative; keep SRT_PATH plain — it goes inside an ffmpeg filter)
 AUDIO_PATH = "output.mp3"
 SRT_PATH = "subtitles.srt"
-INPUT_VID_PATH = "vid.mp4"
+INPUT_VID_PATH = "vid.mp4"          # single-clip fallback
+BACKGROUNDS_DIR = "assets/backgrounds"   # rotate a random clip from here if present
 OUTPUT_VID_PATH = "out.mp4"
 STATE_PATH = "state.json"
 
@@ -70,8 +71,8 @@ class Account:
 
 
 ACCOUNTS = {
-    "drama_main":  Account("drama",  "cookies/drama_main.txt",  2),
-    "horror_main": Account("horror", "cookies/horror_main.txt", 2),
+    "redditregrets":  Account("drama",  "cookies/redditregrets.txt",  2),
+    "nosleeptonight": Account("horror", "cookies/nosleeptonight.txt", 2),
 }
 
 HASHTAGS = {

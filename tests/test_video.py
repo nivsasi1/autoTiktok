@@ -1,14 +1,43 @@
+import random
 import subprocess
 
 import pytest
 
 import video
-from video import build_cmd
+from video import build_cmd, pick_background
 
 
 def fake_probe(stdout):
     return lambda *a, **kw: subprocess.CompletedProcess(
         args=a, returncode=0, stdout=stdout, stderr="")
+
+
+def test_pick_background_chooses_from_folder(tmp_path):
+    for name in ("a.mp4", "b.mp4", "c.mp4"):
+        (tmp_path / name).write_bytes(b"clip")
+    chosen = pick_background(str(tmp_path), "vid.mp4", rng=random.Random(1))
+    assert chosen.endswith(".mp4")
+    assert chosen in [str(tmp_path / n) for n in ("a.mp4", "b.mp4", "c.mp4")]
+
+
+def test_pick_background_ignores_non_mp4(tmp_path):
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "only.mp4").write_bytes(b"clip")
+    assert pick_background(str(tmp_path), "vid.mp4") == str(tmp_path / "only.mp4")
+
+
+def test_pick_background_falls_back_when_folder_empty(tmp_path):
+    fallback = tmp_path / "vid.mp4"
+    fallback.write_bytes(b"clip")
+    empty = tmp_path / "backgrounds"    # does not exist
+    assert pick_background(str(empty), str(fallback)) == str(fallback)
+
+
+def test_pick_background_raises_when_nothing(tmp_path):
+    empty = tmp_path / "backgrounds"
+    missing_fallback = tmp_path / "vid.mp4"
+    with pytest.raises(RuntimeError, match="no background clip"):
+        pick_background(str(empty), str(missing_fallback))
 
 
 def test_get_duration_parses_ffprobe_output(monkeypatch):

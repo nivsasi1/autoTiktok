@@ -33,7 +33,7 @@ def test_dry_run_logs_and_never_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr(
         main, "CookieUploader",
         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("constructed")))
-    assert main._publish(story(), "drama_main", dry_run=True) == 0
+    assert main._publish(story(), "redditregrets", dry_run=True) == 0
     posts = read_posts(config.POST_LOG_PATH)
     assert posts[0]["ok"] is None and posts[0]["story_id"] == "s1"
     # url is logged so a parked post can be traced back to its thread by hand
@@ -46,7 +46,7 @@ def test_success_logs_and_keeps_video(tmp_path, monkeypatch):
     redirect_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(main, "CookieUploader",
                         lambda *a, **kw: FakeUploader(PostResult(True, "uploaded")))
-    assert main._publish(story(), "drama_main", dry_run=False) == 0
+    assert main._publish(story(), "redditregrets", dry_run=False) == 0
     assert read_posts(config.POST_LOG_PATH)[0]["ok"] is True
     assert (tmp_path / "out.mp4").exists()
 
@@ -55,7 +55,7 @@ def test_failure_parks_video_in_outbox(tmp_path, monkeypatch):
     redirect_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(main, "CookieUploader",
                         lambda *a, **kw: FakeUploader(PostResult(False, "boom")))
-    assert main._publish(story(), "drama_main", dry_run=False) == 1
+    assert main._publish(story(), "redditregrets", dry_run=False) == 1
     assert not (tmp_path / "out.mp4").exists()
     assert (tmp_path / "outbox" / "s1.mp4").read_bytes() == b"video"
     caption = (tmp_path / "outbox" / "s1.txt").read_text(encoding="utf-8")
@@ -63,10 +63,29 @@ def test_failure_parks_video_in_outbox(tmp_path, monkeypatch):
     assert read_posts(config.POST_LOG_PATH)[0]["ok"] is False
 
 
+def test_missing_cookies_parks_video_not_crash(tmp_path, monkeypatch):
+    # finding #1: if the cookies file vanishes between the pre-check and _publish,
+    # CookieUploader's constructor raises — that must park the rendered video in
+    # the outbox (like any upload failure), not crash and strand it
+    redirect_paths(tmp_path, monkeypatch)
+
+    def boom(*a, **kw):
+        raise RuntimeError("cookies file cookies/x.txt for 'x' not found")
+
+    monkeypatch.setattr(main, "CookieUploader", boom)
+    assert main._publish(story(), "redditregrets", dry_run=False) == 1
+    assert not (tmp_path / "out.mp4").exists()
+    assert (tmp_path / "outbox" / "s1.mp4").read_bytes() == b"video"
+    rec = read_posts(config.POST_LOG_PATH)[0]
+    assert rec["ok"] is False and "RuntimeError" in rec["detail"]
+
+
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
     # a --post run that finds nothing still records the attempt, so posts.jsonl
     # tells a dry subreddit day apart from a scheduler that never fired
     redirect_paths(tmp_path, monkeypatch, with_video=False)
+    # empty backgrounds dir -> pick_background falls back to the temp vid.mp4
+    monkeypatch.setattr(config, "BACKGROUNDS_DIR", str(tmp_path / "bg"))
     monkeypatch.setattr(config, "INPUT_VID_PATH", str(tmp_path / "vid.mp4"))
     (tmp_path / "vid.mp4").write_bytes(b"clip")
     monkeypatch.setattr(config, "STATE_PATH", str(tmp_path / "state.json"))
@@ -74,11 +93,11 @@ def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
                         lambda *a, **kw: SimpleNamespace(fetch=lambda: None))
     monkeypatch.setattr(
         sys, "argv",
-        ["main.py", "--post", "--account", "drama_main", "--dry-run"])
+        ["main.py", "--post", "--account", "redditregrets", "--dry-run"])
     assert main.main() == 0
     posts = read_posts(config.POST_LOG_PATH)
     assert len(posts) == 1
     assert posts[0]["story_id"] is None
     assert posts[0]["ok"] is None
     assert posts[0]["detail"] == "no story"
-    assert posts[0]["account"] == "drama_main"
+    assert posts[0]["account"] == "redditregrets"
