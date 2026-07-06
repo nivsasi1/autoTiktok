@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import edge_tts
 
@@ -23,8 +24,17 @@ async def _synthesize(text: str, audio_path: str, voice: str) -> list[WordBounda
 
 def synthesize(text: str, audio_path: str, voice: str) -> list[WordBoundary]:
     """Speak `text` into `audio_path` (mp3); return real word timings."""
-    boundaries = asyncio.run(_synthesize(text, audio_path, voice))
-    if not boundaries:
-        raise RuntimeError("edge-tts returned no word boundaries — is the "
-                           "voice name valid and the network up?")
+    # stream into a temp sibling so a failed run never leaves a partial mp3
+    # at audio_path that a caller could mistake for a good one
+    part = audio_path + ".part"
+    try:
+        boundaries = asyncio.run(_synthesize(text, part, voice))
+        if not boundaries:
+            raise RuntimeError("edge-tts returned no word boundaries — is the "
+                               "voice name valid and the network up?")
+    except BaseException:
+        if os.path.exists(part):
+            os.unlink(part)
+        raise
+    os.replace(part, audio_path)
     return boundaries
