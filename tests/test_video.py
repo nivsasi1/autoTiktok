@@ -204,8 +204,23 @@ def test_pick_ambient_uses_niche_folder_or_none(tmp_path):
     got = video.pick_ambient("horror", ambient_dir=str(tmp_path),
                              rng=random.Random(1))
     assert os.path.basename(got) == "drone.mp3"
-    assert video.pick_ambient("drama", ambient_dir=str(tmp_path)) is None
     assert video.pick_ambient("horror", ambient_dir=str(tmp_path / "no")) is None
+
+
+def test_pick_ambient_falls_back_to_any_niche_folder(tmp_path):
+    (tmp_path / "horror").mkdir()
+    (tmp_path / "horror" / "drone.mp3").write_bytes(b"a")
+    (tmp_path / "drama").mkdir()
+    (tmp_path / "drama" / "piano.mp3").write_bytes(b"b")
+    picks = {os.path.basename(video.pick_ambient(
+                 "askreddit", ambient_dir=str(tmp_path), rng=random.Random(s)))
+             for s in range(20)}
+    assert picks == {"drone.mp3", "piano.mp3"}   # pool spans all folders
+
+
+def test_pick_ambient_none_when_no_tracks_anywhere(tmp_path):
+    (tmp_path / "horror").mkdir()                # folders exist but are empty
+    assert video.pick_ambient("askreddit", ambient_dir=str(tmp_path)) is None
 
 
 def test_cut_audio_builds_accurate_seek_cmd(monkeypatch):

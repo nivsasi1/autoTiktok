@@ -10,10 +10,8 @@ from types import SimpleNamespace
 import config
 import metadata
 import pending
+import pipeline
 import post_log
-import split
-import subtitles
-import tts
 import video
 from sources.askreddit import AskRedditSource
 from sources.base import load_used_ids, record_used_id
@@ -91,33 +89,6 @@ def _publish_queued(account_name: str, dry_run: bool):
     return rc
 
 
-def _part_path(base: str, n: int) -> str:
-    root, ext = os.path.splitext(base)
-    return f"{root}_part{n}{ext}"
-
-
-def _render(niche: str, audio_path: str, srt_path: str, out_path: str) -> None:
-    """Plan a background for this narration and export one video."""
-    narration = video.get_duration(audio_path)
-    chain = video.plan_background(niche, narration)
-    ambient = video.pick_ambient(niche)
-    if ambient:
-        print(f"ambient: {os.path.basename(ambient)}")
-    if len(chain) == 1:
-        clip, dur = chain[0]
-        if dur < narration + 1.0:
-            print(f"warning: {os.path.basename(clip)} ({dur:.0f}s) barely covers "
-                  f"the narration ({narration:.0f}s); video may cut early")
-        offset = random.uniform(0.0, max(dur - narration - 1.0, 0.0))
-        print(f"render: {os.path.basename(clip)} @ offset {offset:.1f}s")
-        video.export(clip, audio_path, srt_path, out_path, offset,
-                     ambient=ambient)
-    else:
-        names = ", ".join(os.path.basename(c) for c, _ in chain)
-        print(f"render: {len(chain)}-clip crossfade chain ({names})")
-        video.export(chain, audio_path, srt_path, out_path, ambient=ambient)
-
-
 def main() -> int:
     # redirected stdout defaults to cp1252 on Windows; emoji in story titles
     # would crash prints once a scheduler logs to a file
@@ -179,33 +150,7 @@ def main() -> int:
         return 0
     print(f"story: {story.title}\n       {story.url}")
 
-    print(f"tts: {preset.voice}, {len(story.text)} chars")
-    boundaries = tts.synthesize(story.text, config.AUDIO_PATH, preset.voice)
-
-    narration = video.get_duration(config.AUDIO_PATH)
-    split_plan = None
-    if narration > config.SPLIT_THRESHOLD_S:
-        split_plan = split.split_boundaries(boundaries, narration)
-
-    if split_plan:
-        cut, part1, part2 = split_plan
-        print(f"split: {narration:.0f}s narration -> part 1 ({cut:.0f}s) "
-              f"+ part 2 ({narration - cut:.0f}s)")
-        parts = [(1, part1, 0.0, cut, config.OUTPUT_VID_PATH),
-                 (2, part2, cut, None, config.OUTPUT_PART2_PATH)]
-        for n, bounds, start, dur, out_path in parts:
-            part_audio = _part_path(config.AUDIO_PATH, n)
-            part_srt = _part_path(config.SRT_PATH, n)
-            video.cut_audio(config.AUDIO_PATH, part_audio, start, dur)
-            part_len = cut if n == 1 else narration - cut
-            subtitles.write_srt(bounds, part_srt, preset.words_per_line,
-                                extra_cues=split.label_cues(n, part_len))
-            _render(niche, part_audio, part_srt, out_path)
-    else:
-        subtitles.write_srt(boundaries, config.SRT_PATH, preset.words_per_line)
-        print(f"subtitles: {config.SRT_PATH} ({preset.words_per_line} words/line)")
-        _render(niche, config.AUDIO_PATH, config.SRT_PATH,
-                config.OUTPUT_VID_PATH)
+    result = pipeline.render_story(story, preset, niche)
 
     try:
         record_used_id(config.STATE_PATH, story.id)
@@ -215,7 +160,7 @@ def main() -> int:
               "this story may be picked again next run")
 
     if args.post:
-        if split_plan:
+        if result.split:
             # queue part 2 before touching the upload so a crash can't lose it
             caption2 = metadata.build_caption(story, niche, part=2)
             if args.dry_run:
@@ -229,7 +174,7 @@ def main() -> int:
                                  "caption": caption2})
             return _publish(story, args.account, args.dry_run, part=1)
         return _publish(story, args.account, args.dry_run)
-    if split_plan:
+    if result.split:
         print(f"done -> {config.OUTPUT_VID_PATH} + {config.OUTPUT_PART2_PATH}")
     else:
         print(f"done -> {config.OUTPUT_VID_PATH}")
