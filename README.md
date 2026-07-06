@@ -60,6 +60,19 @@ new, so a split story goes out as two consecutive posts.
 Niche presets (subreddits, voice, words-per-caption, outro) live in
 `config.py` — edit them freely.
 
+## GUI (Phase C)
+
+```
+python gui.py
+```
+
+Opens a local Gradio app (127.0.0.1 only): pick a source — **auto** (niche
+feed), **reddit url** (paste any selftext post), or **freeform** (your own
+title + text) — choose niche and voice, hit **Render**, watch the status
+stream, preview the video (both parts when split), tweak the caption, then
+**Post** (dry-run by default). Split stories queue part 2 for the scheduler
+exactly like the CLI.
+
 ## Tests
 
 ```
