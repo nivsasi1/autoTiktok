@@ -20,6 +20,17 @@ def test_pick_background_chooses_from_folder(tmp_path):
     assert chosen in [str(tmp_path / n) for n in ("a.mp4", "b.mp4", "c.mp4")]
 
 
+def test_pick_background_finds_clips_in_subfolders(tmp_path):
+    # users organize clips into niche subfolders; the glob must recurse
+    (tmp_path / "horror").mkdir()
+    (tmp_path / "scenic").mkdir()
+    (tmp_path / "horror" / "cave.mp4").write_bytes(b"clip")
+    (tmp_path / "scenic" / "beach.mp4").write_bytes(b"clip")
+    chosen = pick_background(str(tmp_path), "vid.mp4", rng=random.Random(1))
+    assert chosen in (str(tmp_path / "horror" / "cave.mp4"),
+                      str(tmp_path / "scenic" / "beach.mp4"))
+
+
 def test_pick_background_ignores_non_mp4(tmp_path):
     (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
     (tmp_path / "only.mp4").write_bytes(b"clip")

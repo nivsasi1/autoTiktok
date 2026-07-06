@@ -8,14 +8,16 @@ import config
 
 
 def pick_background(backgrounds_dir=config.BACKGROUNDS_DIR,
-                   fallback=config.INPUT_VID_PATH, rng=None) -> str:
+                    fallback=config.INPUT_VID_PATH, rng=None) -> str:
     """A random clip from backgrounds_dir, else the single-clip fallback.
 
     Rotating clips (on top of the random start offset) is the main defense
     against TikTok's unoriginal-content flag on reused backgrounds.
     """
     rng = random if rng is None else rng
-    clips = sorted(glob.glob(os.path.join(backgrounds_dir, "*.mp4")))
+    # recursive: users sort clips into subfolders (horror/, scenic/, ...)
+    clips = sorted(glob.glob(os.path.join(backgrounds_dir, "**", "*.mp4"),
+                             recursive=True))
     if clips:
         return rng.choice(clips)
     if os.path.exists(fallback):

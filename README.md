@@ -62,16 +62,16 @@ once its audit is approved.
 ### One-time setup per account
 1. Log into the TikTok account in your browser.
 2. Export cookies with a "Get cookies.txt LOCALLY"-style extension while on
-   tiktok.com; save as `cookies/drama_main.txt` (resp. `horror_main.txt`).
+   tiktok.com; save as `cookies/redditregrets.txt` (resp. `nosleeptonight.txt`).
    Cookies are credentials: the folder is gitignored — keep it that way.
 
 ### Warm-up ramp (do this before scheduling)
 - Week one: post 2-3 videos per account manually in the app, browse a little —
   a fresh account that instantly posts on a robotic schedule is the classic
   shadowban recipe.
-- Then: `python main.py --post --account drama_main --dry-run` (renders and
+- Then: `python main.py --post --account redditregrets --dry-run` (renders and
   shows the caption, uploads nothing).
-- Then 2-3 watched live posts: `python main.py --post --account drama_main`.
+- Then 2-3 watched live posts: `python main.py --post --account redditregrets`.
 - Only then register the schedule:
   `powershell -ExecutionPolicy Bypass -File scripts/register_tasks.ps1`
   (`-Remove` unregisters).
