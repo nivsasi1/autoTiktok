@@ -10,6 +10,7 @@ from xml.etree import ElementTree
 import requests
 
 import config
+from util import atomic_path
 
 # Lazy URL match with a lookahead: stops before trailing punctuation instead
 # of swallowing it, so "https://x.com/a." keeps its sentence-ending period.
@@ -82,8 +83,11 @@ def load_used_ids(path: str) -> set[str]:
 def record_used_id(path: str, story_id: str) -> None:
     ids = load_used_ids(path)
     ids.add(story_id)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(sorted(ids), f)
+    # atomic write: a crash mid-write must not corrupt the state file
+    # (load_used_ids would silently reset to empty and re-enable reposts)
+    with atomic_path(path) as tmp:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(ids), f)
 
 
 def fetch_text(url: str) -> str:
@@ -135,12 +139,15 @@ def fetch_entries(url: str) -> list[SimpleNamespace]:
     for e in root.findall("atom:entry", ATOM_NS):
         kind, _, eid = e.findtext("atom:id", "", ATOM_NS).rpartition("_")
         link = e.find("atom:link", ATOM_NS)
+        href = link.get("href") if link is not None else ""
+        if not href:            # every consumer needs a usable permalink
+            continue
         entries.append(SimpleNamespace(
             id=eid,
             kind=kind,          # "t3" post, "t1" comment
             title=e.findtext("atom:title", "", ATOM_NS),
             author=e.findtext("atom:author/atom:name", "", ATOM_NS),
-            link=link.get("href") if link is not None else "",
+            link=href,
             html=e.findtext("atom:content", "", ATOM_NS) or "",
         ))
     return entries

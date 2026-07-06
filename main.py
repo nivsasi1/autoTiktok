@@ -18,6 +18,11 @@ def build_source(niche: str, preset, used_ids):
 
 
 def main() -> int:
+    # redirected stdout defaults to cp1252 on Windows; emoji in story titles
+    # would crash prints once a scheduler logs to a file
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="Reddit story -> TikTok video")
     parser.add_argument("--niche", choices=sorted(config.NICHES),
                         default=config.DEFAULT_NICHE)
@@ -47,7 +52,12 @@ def main() -> int:
     video.export(config.INPUT_VID_PATH, config.AUDIO_PATH,
                  config.SRT_PATH, config.OUTPUT_VID_PATH, offset)
 
-    record_used_id(config.STATE_PATH, story.id)
+    try:
+        record_used_id(config.STATE_PATH, story.id)
+    except OSError as exc:
+        # the video is already rendered — don't lose it over a state hiccup
+        print(f"warning: couldn't update {config.STATE_PATH} ({exc}); "
+              "this story may be picked again next run")
     print(f"done -> {config.OUTPUT_VID_PATH}")
     return 0
 

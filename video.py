@@ -1,3 +1,4 @@
+import math
 import random
 import subprocess
 
@@ -26,7 +27,19 @@ def get_duration(path: str) -> float:
         capture_output=True, text=True)
     if res.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {path}: {res.stderr.strip()}")
-    return float(res.stdout.strip())
+    try:
+        duration = float(res.stdout.strip())
+    except ValueError as exc:   # exit 0 but empty or "N/A" duration
+        raise RuntimeError(
+            f"ffprobe returned no duration for {path} "
+            f"(got {res.stdout.strip()!r})") from exc
+    # float() happily parses "nan"/"inf", which would poison pick_offset's
+    # math (NaN comparisons are always False) and bake "-ss nan" into ffmpeg
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError(
+            f"ffprobe returned a bogus duration for {path} "
+            f"(got {res.stdout.strip()!r})")
+    return duration
 
 
 def pick_offset(vid_path: str, audio_path: str) -> float:
@@ -43,8 +56,11 @@ def pick_offset(vid_path: str, audio_path: str) -> float:
 
 def export(vid, audio, srt, out, bg_offset) -> None:
     cmd = build_cmd(vid, audio, srt, out, bg_offset)
-    res = subprocess.run(cmd)
+    # capture output so a scheduled/redirected run's failure names its cause
+    res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
+        tail = "\n".join(res.stderr.strip().splitlines()[-8:])
         raise RuntimeError(
             "ffmpeg failed — is ffmpeg installed and on PATH, and do "
-            f"{vid}/{audio}/{srt} all exist? (exit {res.returncode})")
+            f"{vid}/{audio}/{srt} all exist? (exit {res.returncode})\n"
+            f"ffmpeg said:\n{tail}")

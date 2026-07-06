@@ -4,6 +4,7 @@
 out.mp4
 vid.mp4
 *.srt
+*.tmp
 transcript.*
 state.json
 __pycache__/

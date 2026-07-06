@@ -47,6 +47,23 @@ def test_state_survives_corrupt_file(tmp_path):
     assert load_used_ids(str(p)) == set()
 
 
+def test_record_used_id_survives_crash_mid_write(tmp_path, monkeypatch):
+    from sources import base
+    p = str(tmp_path / "state.json")
+    record_used_id(p, "abc")
+
+    def dying_dump(obj, f, **kw):   # crash after a partial write
+        f.write('["partial')
+        raise OSError("disk full")
+
+    monkeypatch.setattr(base.json, "dump", dying_dump)
+    with pytest.raises(OSError):
+        record_used_id(p, "def")
+    assert load_used_ids(p) == {"abc"}   # old state intact, not reset to empty
+    # and the failed temp was cleaned up, not orphaned
+    assert [f.name for f in tmp_path.iterdir()] == ["state.json"]
+
+
 def test_clean_url_in_parens_leaves_no_orphan_bracket():
     assert clean_text("Check this out(https://x.com/a).", 500) == "Check this out."
 
@@ -194,3 +211,13 @@ def test_html_to_text_compound_prose_and_real_trailer():
             "<span>[comments]</span>")
     out = " ".join(html_to_text(frag).split())
     assert out == "I saw a post submitted by /u/foo earlier. The drama grew."
+
+
+def test_fetch_entries_drops_linkless_entries(monkeypatch):
+    from sources import base
+    feed = FEED.replace(
+        '<link href="https://www.reddit.com/r/stories/comments/abc12/tale/"/>',
+        "")
+    monkeypatch.setattr(base, "fetch_text", lambda url: feed)
+    # the link-less t3 entry is filtered at the source; consumers never see it
+    assert [e.id for e in base.fetch_entries("https://x")] == ["xyz99"]
