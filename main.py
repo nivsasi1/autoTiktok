@@ -18,6 +18,11 @@ def build_source(niche: str, preset, used_ids):
 
 
 def main() -> int:
+    # redirected stdout defaults to cp1252 on Windows; emoji in story titles
+    # would crash prints once a scheduler logs to a file
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="Reddit story -> TikTok video")
     parser.add_argument("--niche", choices=sorted(config.NICHES),
                         default=config.DEFAULT_NICHE)
