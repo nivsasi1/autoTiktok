@@ -1,5 +1,6 @@
 import html
 import json
+import os
 import re
 import time
 from abc import ABC, abstractmethod
@@ -82,8 +83,12 @@ def load_used_ids(path: str) -> set[str]:
 def record_used_id(path: str, story_id: str) -> None:
     ids = load_used_ids(path)
     ids.add(story_id)
-    with open(path, "w", encoding="utf-8") as f:
+    # temp file + replace: a crash mid-write must not corrupt the state file
+    # (load_used_ids would silently reset to empty and re-enable reposts)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(sorted(ids), f)
+    os.replace(tmp, path)
 
 
 def fetch_text(url: str) -> str:

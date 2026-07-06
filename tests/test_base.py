@@ -47,6 +47,21 @@ def test_state_survives_corrupt_file(tmp_path):
     assert load_used_ids(str(p)) == set()
 
 
+def test_record_used_id_survives_crash_mid_write(tmp_path, monkeypatch):
+    from sources import base
+    p = str(tmp_path / "state.json")
+    record_used_id(p, "abc")
+
+    def dying_dump(obj, f, **kw):   # crash after a partial write
+        f.write('["partial')
+        raise OSError("disk full")
+
+    monkeypatch.setattr(base.json, "dump", dying_dump)
+    with pytest.raises(OSError):
+        record_used_id(p, "def")
+    assert load_used_ids(p) == {"abc"}   # old state intact, not reset to empty
+
+
 def test_clean_url_in_parens_leaves_no_orphan_bracket():
     assert clean_text("Check this out(https://x.com/a).", 500) == "Check this out."
 
