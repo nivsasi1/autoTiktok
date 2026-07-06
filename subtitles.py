@@ -38,8 +38,13 @@ def group_boundaries(boundaries, words_per_line, max_line_chars=32):
     return groups
 
 
-def write_srt(boundaries, srt_path, words_per_line, max_line_chars=32):
+def write_srt(boundaries, srt_path, words_per_line, max_line_chars=32,
+              extra_cues=None):
+    """extra_cues: [(text, start, end)] merged in — e.g. part labels carrying
+    their own {\\an8} placement so they don't collide with the captions."""
     groups = group_boundaries(boundaries, words_per_line, max_line_chars)
+    if extra_cues:
+        groups = sorted(groups + list(extra_cues), key=lambda g: g[1])
     with open(srt_path, "w", encoding="utf-8") as f:
         for i, (text, start, end) in enumerate(groups, 1):
             f.write(f"{i}\n{format_timestamp(start)} --> {format_timestamp(end)}\n{text}\n\n")

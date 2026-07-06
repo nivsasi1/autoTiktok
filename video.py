@@ -78,24 +78,53 @@ def plan_background(niche, needed, rng=None, prober=None,
     return chain
 
 
+AMBIENT_EXTS = (".mp3", ".m4a", ".wav", ".ogg")
+
+
+def pick_ambient(niche, ambient_dir=config.AMBIENT_DIR, rng=None):
+    """Random ambient bed from assets/ambient/<niche>/; None means no bed
+    (niches without a folder just get plain narration)."""
+    rng = random if rng is None else rng
+    try:
+        tracks = sorted(e.path for e in os.scandir(os.path.join(ambient_dir, niche))
+                        if e.name.lower().endswith(AMBIENT_EXTS))
+    except OSError:
+        return None
+    return rng.choice(tracks) if tracks else None
+
+
+def _ambient_mix(narr_label, ambient_idx, vol):
+    # loop the bed under the narration; normalize=0 keeps the voice at full
+    # level (amix would otherwise halve both inputs)
+    return (f";[{ambient_idx}:a]volume={vol},afade=t=in:d=1[amb];"
+            f"[{narr_label}][amb]amix=inputs=2:duration=first:normalize=0[a]")
+
+
 def build_cmd(vid, audio, srt, out, bg_offset,
-              bitrate=config.VIDEO_BITRATE, force_style=config.FORCE_STYLE):
+              bitrate=config.VIDEO_BITRATE, force_style=config.FORCE_STYLE,
+              ambient=None, ambient_vol=config.AMBIENT_VOLUME):
     # center-crop to 9:16 whatever the source resolution, then burn subtitles
     vf = (f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
           f"crop=1080:1920,subtitles={srt}:force_style='{force_style}'[v]")
-    return ["ffmpeg", "-y",
-            "-ss", f"{bg_offset:.2f}", "-i", vid,   # fast-seek the background
-            "-i", audio,
-            "-filter_complex", vf,
-            "-map", "[v]", "-map", "1:a",
-            "-c:v", "libx264", "-preset", "fast", "-b:v", bitrate,
-            "-c:a", "aac",
-            "-shortest", out]
+    cmd = ["ffmpeg", "-y",
+           "-ss", f"{bg_offset:.2f}", "-i", vid,   # fast-seek the background
+           "-i", audio]
+    amap = "1:a"
+    if ambient:
+        cmd += ["-stream_loop", "-1", "-i", ambient]
+        vf += _ambient_mix("1:a", 2, ambient_vol)
+        amap = "[a]"
+    return cmd + ["-filter_complex", vf,
+                  "-map", "[v]", "-map", amap,
+                  "-c:v", "libx264", "-preset", "fast", "-b:v", bitrate,
+                  "-c:a", "aac",
+                  "-shortest", out]
 
 
 def build_chain_cmd(chain, audio, srt, out,
                     bitrate=config.VIDEO_BITRATE,
-                    force_style=config.FORCE_STYLE, fade=None):
+                    force_style=config.FORCE_STYLE, fade=None,
+                    ambient=None, ambient_vol=config.AMBIENT_VOLUME):
     """Chain of clips: each normalized to 1080x1920@30, crossfaded joins,
     subtitles burned over the whole run. One render pass, no temp files."""
     fade = config.CROSSFADE_S if fade is None else fade
@@ -104,6 +133,10 @@ def build_chain_cmd(chain, audio, srt, out,
         cmd += ["-i", clip]
     cmd += ["-i", audio]
     n = len(chain)
+    amap = f"{n}:a"
+    if ambient:
+        cmd += ["-stream_loop", "-1", "-i", ambient]
+        amap = "[a]"
     parts = [
         (f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,"
          f"crop=1080:1920,fps=30,setsar=1,format=yuv420p,"
@@ -117,8 +150,11 @@ def build_chain_cmd(chain, audio, srt, out,
                      f"duration={fade:.2f}:offset={off:.3f}[x{i}]")
         cur, total = f"[x{i}]", off + chain[i][1]
     parts.append(f"{cur}subtitles={srt}:force_style='{force_style}'[v]")
-    return cmd + ["-filter_complex", ";".join(parts),
-                  "-map", "[v]", "-map", f"{n}:a",
+    fc = ";".join(parts)
+    if ambient:
+        fc += _ambient_mix(f"{n}:a", n + 1, ambient_vol)
+    return cmd + ["-filter_complex", fc,
+                  "-map", "[v]", "-map", amap,
                   "-c:v", "libx264", "-preset", "fast", "-b:v", bitrate,
                   "-c:a", "aac", "-shortest", out]
 
@@ -145,14 +181,28 @@ def get_duration(path: str) -> float:
     return duration
 
 
-def export(background, audio, srt, out, bg_offset=0.0) -> None:
+def cut_audio(src, out, start=0.0, duration=None) -> None:
+    """Re-encode a slice of the narration into `out` (accurate output-side
+    seek; mp3 copy-cutting quantizes to frame boundaries)."""
+    cmd = ["ffmpeg", "-y", "-i", src, "-ss", f"{start:.3f}"]
+    if duration is not None:
+        cmd += ["-t", f"{duration:.3f}"]
+    cmd += ["-c:a", "libmp3lame", "-q:a", "2", out]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        tail = "\n".join(res.stderr.strip().splitlines()[-8:])
+        raise RuntimeError(f"ffmpeg failed cutting {src} (exit "
+                           f"{res.returncode})\nffmpeg said:\n{tail}")
+
+
+def export(background, audio, srt, out, bg_offset=0.0, ambient=None) -> None:
     """background: a single clip path (with bg_offset), or a [(clip, dur), ...]
     chain from plan_background (crossfaded, offset ignored)."""
     if isinstance(background, list) and len(background) > 1:
-        cmd = build_chain_cmd(background, audio, srt, out)
+        cmd = build_chain_cmd(background, audio, srt, out, ambient=ambient)
     else:
         vid = background[0][0] if isinstance(background, list) else background
-        cmd = build_cmd(vid, audio, srt, out, bg_offset)
+        cmd = build_cmd(vid, audio, srt, out, bg_offset, ambient=ambient)
     # capture output so a scheduled/redirected run's failure names its cause
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:

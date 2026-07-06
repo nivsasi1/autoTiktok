@@ -25,6 +25,15 @@ CHAIN_BUFFER_S = 1.0                # chain must outlast the narration by this
 OUTPUT_VID_PATH = "out.mp4"
 STATE_PATH = "state.json"
 
+# ambient bed: assets/ambient/<niche>/ tracks looped under the narration
+AMBIENT_DIR = "assets/ambient"
+AMBIENT_VOLUME = 0.12               # quiet enough to feel, not to fight the voice
+
+# long stories become Part 1/2 + 2/2, cut at a mid-story sentence end
+SPLIT_THRESHOLD_S = 100
+OUTPUT_PART2_PATH = "out_part2.mp4"
+QUEUE_DIR = "queue"                 # part 2 waits here for the next --post run
+
 VIDEO_BITRATE = "2500k"
 FORCE_STYLE = (
     "FontName=Arial,Bold=1,Alignment=10,Fontsize=20,"

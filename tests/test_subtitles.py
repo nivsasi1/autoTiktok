@@ -43,3 +43,12 @@ def test_write_srt_produces_valid_blocks(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert text == ("1\n00:00:00,000 --> 00:00:00,500\nhey\n\n"
                     "2\n00:00:00,500 --> 00:00:01,000\nyou\n\n")
+
+
+def test_write_srt_merges_extra_cues_sorted_by_start(tmp_path):
+    out = tmp_path / "s.srt"
+    write_srt([wb("hey", 1.0, 1.5)], str(out), words_per_line=1,
+              extra_cues=[(r"{\an8}PART 1/2", 0.2, 3.2)])
+    text = out.read_text(encoding="utf-8")
+    assert text.index(r"{\an8}PART 1/2") < text.index("hey")  # sorted first
+    assert "1\n00:00:00,200 --> 00:00:03,200" in text

@@ -30,6 +30,11 @@ answers).
    are heavily fingerprinted and will get videos throttled. Use **varied,
    watermark-free, less-common** footage (satisfying/aesthetic loops, your own
    recordings). Longer clips give the random offset more room to vary.
+5. **(Optional) Ambient beds** — drop audio files (`.mp3`/`.m4a`/`.wav`/`.ogg`)
+   in `assets/ambient/<niche>/` and each render loops a random one quietly
+   under the narration (`AMBIENT_VOLUME` in `config.py`). Niches without a
+   folder get plain narration (like the clips, `assets/` stays out of git).
+   Royalty-free ambience only — TikTok mutes videos over copyright audio.
 
 ## Usage
 
@@ -42,6 +47,13 @@ python main.py --niche askreddit
 Output: `out.mp4` (1080x1920, captions burned in). Artifacts `output.mp3` /
 `subtitles.srt` are left behind for inspection; `state.json` remembers used
 posts so you never render the same story twice.
+
+Narrations over `SPLIT_THRESHOLD_S` (100s) are split at a mid-story sentence
+end into **Part 1/2 + Part 2/2** — on-screen labels, a TO BE CONTINUED tease,
+part-labelled captions. Without `--post` both land next to each other
+(`out.mp4` + `out_part2.mp4`); with `--post`, part 1 posts now and part 2
+waits in `queue/` — the next scheduled run posts it before fetching anything
+new, so a split story goes out as two consecutive posts.
 
 Niche presets (subreddits, voice, words-per-caption, outro) live in
 `config.py` — edit them freely.
