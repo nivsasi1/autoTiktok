@@ -62,6 +62,22 @@ def profile_logged_in(profile_dir) -> bool:
     return row[0] / 1_000_000 - _CHROME_EPOCH_OFFSET_S > time.time()
 
 
+# TikTok Studio greets a fresh profile with a react-joyride guided tour whose
+# full-screen overlay intercepts every click (blocked a real upload on
+# 2026-07-07). Nuke tour portals on sight, and keep watching — they can pop
+# mid-flow.
+_KILL_TOUR_JS = """
+addEventListener('DOMContentLoaded', () => {
+  const kill = () => document
+    .querySelectorAll('#react-joyride-portal, .react-joyride__overlay')
+    .forEach(el => el.remove());
+  kill();
+  new MutationObserver(kill)
+    .observe(document.documentElement, {childList: true, subtree: true});
+});
+"""
+
+
 class ProfileUploader(Uploader):
     def __init__(self, profile_dir: str, account: str):
         self.profile_dir = profile_dir
@@ -84,6 +100,7 @@ class ProfileUploader(Uploader):
                 ctx = p.chromium.launch_persistent_context(
                     self.profile_dir, channel="chrome", headless=False)
                 try:
+                    ctx.add_init_script(_KILL_TOUR_JS)
                     page = ctx.pages[0] if ctx.pages else ctx.new_page()
                     page.goto(str(tt_config.paths.main))
                     page.wait_for_load_state()
