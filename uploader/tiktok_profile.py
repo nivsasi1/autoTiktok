@@ -9,8 +9,57 @@ Reuses tiktok-uploader's maintained upload-form driver on top.
 """
 
 import os
+import shutil
+import sqlite3
+import tempfile
+import time
 
 from uploader.base import PostResult, Uploader
+
+_CHROME_EPOCH_OFFSET_S = 11644473600   # Chrome stamps µs since 1601-01-01
+
+
+def find_chrome():
+    """Path to the real chrome.exe, or None. Login must run in a PLAIN
+    Chrome: Google blocks OAuth inside automation-controlled browsers."""
+    roots = [os.environ.get("ProgramFiles", r"C:\Program Files"),
+             os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+             os.environ.get("LOCALAPPDATA", "")]
+    for root in roots:
+        candidate = os.path.join(root, "Google", "Chrome", "Application",
+                                 "chrome.exe")
+        if root and os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def profile_logged_in(profile_dir) -> bool:
+    """True if the profile's cookie DB holds an unexpired TikTok sessionid.
+    Reads a COPY of the SQLite file (Chrome locks the live one). Values are
+    encrypted but names/domains/expiries aren't — enough for a status check."""
+    for rel in (("Default", "Network", "Cookies"), ("Default", "Cookies")):
+        db = os.path.join(profile_dir, *rel)
+        if os.path.exists(db):
+            break
+    else:
+        return False
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = os.path.join(td, "Cookies")
+            shutil.copy2(db, tmp)
+            con = sqlite3.connect(tmp)
+            try:
+                row = con.execute(
+                    "SELECT expires_utc FROM cookies WHERE name='sessionid' "
+                    "AND host_key LIKE '%tiktok.com' "
+                    "ORDER BY expires_utc DESC LIMIT 1").fetchone()
+            finally:
+                con.close()
+    except Exception:
+        return False
+    if not row:
+        return False
+    return row[0] / 1_000_000 - _CHROME_EPOCH_OFFSET_S > time.time()
 
 
 class ProfileUploader(Uploader):

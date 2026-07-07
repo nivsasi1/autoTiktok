@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+import subprocess
 import sys
 import time
 from types import SimpleNamespace
@@ -18,7 +19,8 @@ from sources.base import load_used_ids, record_used_id
 from sources.reddit_text import RedditTextSource
 from uploader.base import PostResult
 from uploader.tiktok_cookies import CookieUploader, missing_cookies_error
-from uploader.tiktok_profile import ProfileUploader
+from uploader.tiktok_profile import (ProfileUploader, find_chrome,
+                                     profile_logged_in)
 
 
 def build_source(niche: str, preset, used_ids):
@@ -32,43 +34,40 @@ def _profile_dir(account_name: str) -> str:
 
 
 def _make_uploader(account_name: str):
-    """Prefer the logged-in browser profile (survives TikTok's device-bound
-    sessions); fall back to the cookies-file uploader."""
+    """Prefer a VERIFIED logged-in browser profile (survives TikTok's
+    device-bound sessions); fall back to the cookies-file uploader."""
     pdir = _profile_dir(account_name)
-    if os.path.isdir(pdir):
+    if profile_logged_in(pdir):
         return ProfileUploader(pdir, account_name)
     account = config.ACCOUNTS[account_name]
-    return CookieUploader(account.cookies_file, account_name)
+    if os.path.exists(account.cookies_file):
+        return CookieUploader(account.cookies_file, account_name)
+    # no cookies either: the profile uploader's error names the fix
+    return ProfileUploader(pdir, account_name)
 
 
 def _login(account_name: str) -> int:
-    """Open the account's persistent browser profile for a one-time manual
-    login; every later upload reuses it."""
-    from playwright.sync_api import sync_playwright
-    pdir = _profile_dir(account_name)
+    """One-time manual login in a PLAIN Chrome on the account's profile dir.
+    No automation attached: Google's OAuth refuses controlled browsers and
+    TikTok rate-limits logins in them — a normal window sails through.
+    Uploads then reuse the same profile via Playwright."""
+    pdir = os.path.abspath(_profile_dir(account_name))
     os.makedirs(pdir, exist_ok=True)
-    print(f"opening a browser — log into TikTok as '{account_name}' "
-          "(google login is fine), then leave the window open…")
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(pdir, channel="chrome",
-                                                   headless=False)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto("https://www.tiktok.com/login")
-        deadline = time.time() + 300
-        ok = False
-        while time.time() < deadline:
-            if any(c["name"] == "sessionid" for c in ctx.cookies()):
-                ok = True
-                break
-            time.sleep(2)
-        if ok:
-            time.sleep(3)   # let post-login storage writes land
-        ctx.close()
-    if ok:
-        print(f"logged in — profile saved under {pdir}; uploads for "
-              f"'{account_name}' now use it automatically")
+    chrome = find_chrome()
+    if chrome is None:
+        print("error: couldn't find chrome.exe — install Google Chrome")
+        return 1
+    print(f"opening Chrome — log into TikTok as '{account_name}' (google "
+          "login works in this window), then CLOSE the window to finish")
+    subprocess.run([chrome, f"--user-data-dir={pdir}", "--no-first-run",
+                    "--no-default-browser-check", "--new-window",
+                    "https://www.tiktok.com/login"])
+    if profile_logged_in(pdir):
+        print(f"logged in — uploads for '{account_name}' now use the "
+              f"profile under {pdir} automatically")
         return 0
-    print("no login detected within 5 minutes — run it again")
+    print("login not detected — did the window close before you finished? "
+          "run it again")
     return 1
 
 
@@ -200,10 +199,11 @@ def _status() -> int:
     """One-glance system state: auth, queue, outbox, recent posts."""
     print("accounts:")
     for name, acc in sorted(config.ACCOUNTS.items()):
-        if os.path.isdir(_profile_dir(name)):
-            auth = "browser profile (logged in once)"
+        if profile_logged_in(_profile_dir(name)):
+            auth = "browser profile: logged in"
         elif os.path.exists(acc.cookies_file):
-            auth = "cookies file (fallback — may bounce off ticket guard)"
+            auth = ("cookies file only (may bounce off ticket guard) — "
+                    f"better: python main.py --login --account {name}")
         else:
             auth = f"NO LOGIN — run: python main.py --login --account {name}"
         print(f"  {name} [{acc.niche}]: {auth}")
@@ -275,10 +275,12 @@ def main() -> int:
         account = config.ACCOUNTS[args.account]
         niche = account.niche
         if (not args.dry_run
-                and not os.path.isdir(_profile_dir(args.account))
+                and not profile_logged_in(_profile_dir(args.account))
                 and not os.path.exists(account.cookies_file)):
-            print("error: " + missing_cookies_error(account.cookies_file,
-                                                    args.account))
+            print(f"error: no login for '{args.account}' — run: python "
+                  f"main.py --login --account {args.account}\n(or, fallback: "
+                  + missing_cookies_error(account.cookies_file,
+                                          args.account) + ")")
             return 1
         if not args.dry_run:
             # human-irregular timing on top of Task Scheduler's random delay
