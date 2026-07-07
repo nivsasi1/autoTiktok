@@ -94,10 +94,19 @@ python -m pytest tests/ -v
 once its audit is approved.
 
 ### One-time setup per account
-1. Log into the TikTok account in your browser.
-2. Export cookies with a "Get cookies.txt LOCALLY"-style extension while on
-   tiktok.com; save as `cookies/redditregrets.txt` (resp. `nosleeptonight.txt`).
-   Cookies are credentials: the folder is gitignored — keep it that way.
+```
+python main.py --login --account redditregrets
+```
+A browser opens — log into TikTok as that account (Google login works) and
+wait for the confirmation. The login lives in a persistent browser profile
+under `profiles/<account>/` that every upload reuses.
+
+**Why not just cookies?** TikTok binds web sessions to device keys stored in
+the original browser (ticket guard), so a `cookies.txt` export bounces to the
+login page when replayed elsewhere. A cookies file at
+`cookies/<account>.txt` still works as a fallback when no profile exists —
+but expect it to fail on ticket-guarded accounts. Profiles and cookies are
+credentials: both folders are gitignored — keep it that way.
 
 ### Warm-up ramp (do this before scheduling)
 - Week one: post 2-3 videos per account manually in the app, browse a little —

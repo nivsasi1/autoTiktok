@@ -112,3 +112,4 @@ CAPTION_TITLE_CHARS = 90
 POST_JITTER_MAX_S = 900        # extra 0-15 min of human-irregular delay
 OUTBOX_DIR = "outbox"
 POST_LOG_PATH = "posts.jsonl"
+PROFILES_DIR = "profiles"      # persistent browser profiles (credentials!)
