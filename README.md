@@ -97,9 +97,11 @@ once its audit is approved.
 ```
 python main.py --login --account redditregrets
 ```
-A browser opens — log into TikTok as that account (Google login works) and
-wait for the confirmation. The login lives in a persistent browser profile
-under `profiles/<account>/` that every upload reuses.
+A **plain Chrome window** opens (no automation attached — Google's OAuth and
+TikTok's login rate-limits both reject controlled browsers). Log into TikTok
+as that account, then **close the window**; the command verifies the session
+landed. The login lives in a persistent browser profile under
+`profiles/<account>/` that every upload reuses.
 
 **Why not just cookies?** TikTok binds web sessions to device keys stored in
 the original browser (ticket guard), so a `cookies.txt` export bounces to the
