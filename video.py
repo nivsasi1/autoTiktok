@@ -111,20 +111,40 @@ def _ambient_mix(narr_label, ambient_idx, vol):
             f"[{narr_label}][amb]amix=inputs=2:duration=first:normalize=0[a]")
 
 
+def _subtitles_filter(srt, force_style):
+    # .ass carries its own styles (karaoke colors, hook); force_style would
+    # stomp them — it's only for bare .srt files
+    if srt.endswith(".ass"):
+        return f"subtitles={srt}"
+    return f"subtitles={srt}:force_style='{force_style}'"
+
+
+def _card_overlay(card_idx, card_s):
+    # fade the card's alpha out over its last 0.4s, then pin it upper-center
+    return (f";[{card_idx}:v]format=rgba,"
+            f"fade=t=out:st={card_s - 0.4:.2f}:d=0.4:alpha=1[card];"
+            f"[vs][card]overlay=(W-w)/2:340:enable='lte(t,{card_s:.2f})'[v]")
+
+
 def build_cmd(vid, audio, srt, out, bg_offset,
               bitrate=config.VIDEO_BITRATE, force_style=config.FORCE_STYLE,
-              ambient=None, ambient_vol=config.AMBIENT_VOLUME):
+              ambient=None, ambient_vol=config.AMBIENT_VOLUME,
+              card=None, card_s=config.HOOK_CARD_S):
     # center-crop to 9:16 whatever the source resolution, then burn subtitles
+    sub_label = "[vs]" if card else "[v]"
     vf = (f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-          f"crop=1080:1920,subtitles={srt}:force_style='{force_style}'[v]")
+          f"crop=1080:1920,{_subtitles_filter(srt, force_style)}{sub_label}")
     cmd = ["ffmpeg", "-y",
            "-ss", f"{bg_offset:.2f}", "-i", vid,   # fast-seek the background
            "-i", audio]
-    amap = "1:a"
+    amap, idx = "1:a", 2
     if ambient:
         cmd += ["-stream_loop", "-1", "-i", ambient]
-        vf += _ambient_mix("1:a", 2, ambient_vol)
-        amap = "[a]"
+        vf += _ambient_mix("1:a", idx, ambient_vol)
+        amap, idx = "[a]", idx + 1
+    if card:
+        cmd += ["-loop", "1", "-t", f"{card_s:.2f}", "-i", card]
+        vf += _card_overlay(idx, card_s)
     return cmd + ["-filter_complex", vf,
                   "-map", "[v]", "-map", amap,
                   "-c:v", "libx264", "-preset", "fast", "-b:v", bitrate,
@@ -135,7 +155,8 @@ def build_cmd(vid, audio, srt, out, bg_offset,
 def build_chain_cmd(chain, audio, srt, out,
                     bitrate=config.VIDEO_BITRATE,
                     force_style=config.FORCE_STYLE, fade=None,
-                    ambient=None, ambient_vol=config.AMBIENT_VOLUME):
+                    ambient=None, ambient_vol=config.AMBIENT_VOLUME,
+                    card=None, card_s=config.HOOK_CARD_S):
     """Chain of clips: each normalized to 1080x1920@30, crossfaded joins,
     subtitles burned over the whole run. One render pass, no temp files."""
     fade = config.CROSSFADE_S if fade is None else fade
@@ -144,10 +165,10 @@ def build_chain_cmd(chain, audio, srt, out,
         cmd += ["-i", clip]
     cmd += ["-i", audio]
     n = len(chain)
-    amap = f"{n}:a"
+    amap, idx = f"{n}:a", n + 1
     if ambient:
         cmd += ["-stream_loop", "-1", "-i", ambient]
-        amap = "[a]"
+        amap, idx = "[a]", idx + 1
     parts = [
         (f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,"
          f"crop=1080:1920,fps=30,setsar=1,format=yuv420p,"
@@ -160,10 +181,14 @@ def build_chain_cmd(chain, audio, srt, out,
         parts.append(f"{cur}[v{i}]xfade=transition=fade:"
                      f"duration={fade:.2f}:offset={off:.3f}[x{i}]")
         cur, total = f"[x{i}]", off + chain[i][1]
-    parts.append(f"{cur}subtitles={srt}:force_style='{force_style}'[v]")
+    sub_label = "[vs]" if card else "[v]"
+    parts.append(f"{cur}{_subtitles_filter(srt, force_style)}{sub_label}")
     fc = ";".join(parts)
     if ambient:
         fc += _ambient_mix(f"{n}:a", n + 1, ambient_vol)
+    if card:
+        cmd += ["-loop", "1", "-t", f"{card_s:.2f}", "-i", card]
+        fc += _card_overlay(idx, card_s)
     return cmd + ["-filter_complex", fc,
                   "-map", "[v]", "-map", amap,
                   "-c:v", "libx264", "-preset", "fast", "-b:v", bitrate,
@@ -192,6 +217,18 @@ def get_duration(path: str) -> float:
     return duration
 
 
+def concat_audio(first, second, out) -> None:
+    """Join two narration mp3s (the spoken part-2 intro + the story tail)."""
+    cmd = ["ffmpeg", "-y", "-i", first, "-i", second,
+           "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1",
+           "-c:a", "libmp3lame", "-q:a", "2", out]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        tail = "\n".join(res.stderr.strip().splitlines()[-8:])
+        raise RuntimeError(f"ffmpeg failed joining {first}+{second} (exit "
+                           f"{res.returncode})\nffmpeg said:\n{tail}")
+
+
 def cut_audio(src, out, start=0.0, duration=None) -> None:
     """Re-encode a slice of the narration into `out` (accurate output-side
     seek; mp3 copy-cutting quantizes to frame boundaries)."""
@@ -206,14 +243,17 @@ def cut_audio(src, out, start=0.0, duration=None) -> None:
                            f"{res.returncode})\nffmpeg said:\n{tail}")
 
 
-def export(background, audio, srt, out, bg_offset=0.0, ambient=None) -> None:
+def export(background, audio, srt, out, bg_offset=0.0, ambient=None,
+           card=None) -> None:
     """background: a single clip path (with bg_offset), or a [(clip, dur), ...]
     chain from plan_background (crossfaded, offset ignored)."""
     if isinstance(background, list) and len(background) > 1:
-        cmd = build_chain_cmd(background, audio, srt, out, ambient=ambient)
+        cmd = build_chain_cmd(background, audio, srt, out, ambient=ambient,
+                              card=card)
     else:
         vid = background[0][0] if isinstance(background, list) else background
-        cmd = build_cmd(vid, audio, srt, out, bg_offset, ambient=ambient)
+        cmd = build_cmd(vid, audio, srt, out, bg_offset, ambient=ambient,
+                        card=card)
     # capture output so a scheduled/redirected run's failure names its cause
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:

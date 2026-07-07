@@ -34,8 +34,8 @@ def split_boundaries(boundaries, narration):
 
 
 def label_cues(part, duration):
-    r"""Extra SRT cues for write_srt; {\an8} pins them top-center, clear of
-    the word captions (Alignment=10 = mid-screen)."""
+    r"""Extra cues for write_ass; {\an8} pins them top-center, clear of
+    the mid-screen word captions."""
     cues = [(r"{\an8}PART %d/2" % part, 0.2, 0.2 + LABEL_S)]
     if part == 1:
         cues.append((r"{\an8}TO BE CONTINUED…",

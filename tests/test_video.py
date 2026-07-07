@@ -173,6 +173,17 @@ def test_build_cmd_maps_filtered_video_and_audio():
     assert cmd[-1] == "out.mp4"
 
 
+def test_ass_captions_keep_their_own_styles():
+    # force_style would stomp the karaoke colors baked into the .ass
+    cmd = build_cmd("vid.mp4", "output.mp3", "captions.ass", "out.mp4", 0.0)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "subtitles=captions.ass" in fc and "force_style" not in fc
+    chain_cmd = build_chain_cmd([("a.mp4", 12.0), ("b.mp4", 12.0)],
+                                "output.mp3", "captions.ass", "out.mp4")
+    fc = chain_cmd[chain_cmd.index("-filter_complex") + 1]
+    assert "subtitles=captions.ass" in fc and "force_style" not in fc
+
+
 def test_build_cmd_with_ambient_loops_and_mixes_quietly():
     cmd = build_cmd("vid.mp4", "output.mp3", "subtitles.srt", "out.mp4",
                     bg_offset=0.0, ambient="drone.mp3", ambient_vol=0.12)
@@ -221,6 +232,54 @@ def test_pick_ambient_falls_back_to_any_niche_folder(tmp_path):
 def test_pick_ambient_none_when_no_tracks_anywhere(tmp_path):
     (tmp_path / "horror").mkdir()                # folders exist but are empty
     assert video.pick_ambient("askreddit", ambient_dir=str(tmp_path)) is None
+
+
+def test_build_cmd_card_overlays_after_subtitles():
+    cmd = build_cmd("vid.mp4", "output.mp3", "captions.ass", "out.mp4", 0.0,
+                    card="hook_card.png", card_s=3.0)
+    joined = " ".join(cmd)
+    assert "-loop 1 -t 3.00 -i hook_card.png" in joined
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[vs]" in fc                          # subtitles feed the overlay
+    assert "[2:v]format=rgba,fade=t=out:st=2.60" in fc
+    assert "overlay=(W-w)/2:340:enable='lte(t,3.00)'[v]" in fc
+
+
+def test_build_cmd_card_and_ambient_share_input_indexes():
+    cmd = build_cmd("vid.mp4", "output.mp3", "captions.ass", "out.mp4", 0.0,
+                    ambient="drone.mp3", card="hook_card.png")
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[2:a]volume=" in fc                  # ambient right after audio
+    assert "[3:v]format=rgba" in fc              # card is the input after it
+
+
+def test_build_chain_cmd_card_index_accounts_for_ambient():
+    chain = [("a.mp4", 12.0), ("b.mp4", 12.0)]
+    cmd = build_chain_cmd(chain, "output.mp3", "captions.ass", "out.mp4",
+                          ambient="drone.mp3", card="hook_card.png")
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[3:a]volume=" in fc                  # ambient = n+1
+    assert "[4:v]format=rgba" in fc              # card = n+2
+    cmd = build_chain_cmd(chain, "output.mp3", "captions.ass", "out.mp4",
+                          card="hook_card.png")
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[3:v]format=rgba" in fc              # no ambient -> card = n+1
+
+
+def test_concat_audio_builds_concat_filter(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(args=cmd, returncode=0,
+                                           stdout="", stderr="")
+
+    monkeypatch.setattr(video.subprocess, "run", fake_run)
+    video.concat_audio("intro.mp3", "tail.mp3", "part2.mp3")
+    joined = " ".join(seen["cmd"])
+    assert "-i intro.mp3 -i tail.mp3" in joined
+    assert "concat=n=2:v=0:a=1" in joined
+    assert seen["cmd"][-1] == "part2.mp3"
 
 
 def test_cut_audio_builds_accurate_seek_cmd(monkeypatch):

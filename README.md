@@ -46,16 +46,23 @@ python main.py --niche horror
 python main.py --niche askreddit
 ```
 
-Output: `out.mp4` (1080x1920, captions burned in). Artifacts `output.mp3` /
-`subtitles.srt` are left behind for inspection; `state.json` remembers used
-posts so you never render the same story twice.
+Output: `out.mp4` (1080x1920, karaoke captions burned in — spoken words sweep
+to yellow, timed from real TTS word boundaries — plus a Reddit-post-style
+hook card over the first 3s: the niche account's avatar (`assets/pfp_<account>.png`),
+handle, title and engagement row; falls back to a big text hook if card
+rendering fails). Artifacts `output.mp3` / `captions.ass` are left behind for
+inspection; `state.json` remembers used posts so you never render the same
+story twice.
 
 Narrations over `SPLIT_THRESHOLD_S` (100s) are split at a mid-story sentence
 end into **Part 1/2 + Part 2/2** — on-screen labels, a TO BE CONTINUED tease,
-part-labelled captions. Without `--post` both land next to each other
-(`out.mp4` + `out_part2.mp4`); with `--post`, part 1 posts now and part 2
-waits in `queue/` — the next scheduled run posts it before fetching anything
-new, so a split story goes out as two consecutive posts.
+part-labelled captions, and part 2 opens with a spoken "Part 2 of \<title\>"
+lead-in so it never resumes mid-thought. Without `--post` both land next to
+each other (`out.mp4` + `out_part2.mp4`); with `--post`, part 1 posts now and
+part 2 waits in `queue/` — the next scheduled run posts it before fetching
+anything new, so a split story goes out as two consecutive posts. If part 1's
+upload fails, part 2 is parked in `outbox/` alongside it instead of staying
+scheduled.
 
 Niche presets (subreddits, voice, words-per-caption, outro) live in
 `config.py` — edit them freely.
@@ -87,10 +94,19 @@ python -m pytest tests/ -v
 once its audit is approved.
 
 ### One-time setup per account
-1. Log into the TikTok account in your browser.
-2. Export cookies with a "Get cookies.txt LOCALLY"-style extension while on
-   tiktok.com; save as `cookies/redditregrets.txt` (resp. `nosleeptonight.txt`).
-   Cookies are credentials: the folder is gitignored — keep it that way.
+```
+python main.py --login --account redditregrets
+```
+A browser opens — log into TikTok as that account (Google login works) and
+wait for the confirmation. The login lives in a persistent browser profile
+under `profiles/<account>/` that every upload reuses.
+
+**Why not just cookies?** TikTok binds web sessions to device keys stored in
+the original browser (ticket guard), so a `cookies.txt` export bounces to the
+login page when replayed elsewhere. A cookies file at
+`cookies/<account>.txt` still works as a fallback when no profile exists —
+but expect it to fail on ticket-guarded accounts. Profiles and cookies are
+credentials: both folders are gitignored — keep it that way.
 
 ### Warm-up ramp (do this before scheduling)
 - Week one: post 2-3 videos per account manually in the app, browse a little —

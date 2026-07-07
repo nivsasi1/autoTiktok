@@ -4,3 +4,4 @@ python-dotenv~=1.0
 pytest~=8.3
 tiktok-uploader~=1.2
 gradio~=5.0
+Pillow~=11.0

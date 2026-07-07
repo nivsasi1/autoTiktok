@@ -17,6 +17,10 @@ def redirect_paths(tmp_path, monkeypatch, with_video=True):
     monkeypatch.setattr(config, "POST_LOG_PATH", str(tmp_path / "posts.jsonl"))
     monkeypatch.setattr(config, "OUTBOX_DIR", str(tmp_path / "outbox"))
     monkeypatch.setattr(config, "OUTPUT_VID_PATH", str(tmp_path / "out.mp4"))
+    # never let a REAL queued part 2 leak into a test run
+    monkeypatch.setattr(config, "QUEUE_DIR", str(tmp_path / "queue"))
+    # nor a real logged-in browser profile (would bypass the fake uploader)
+    monkeypatch.setattr(config, "PROFILES_DIR", str(tmp_path / "profiles"))
     if with_video:
         (tmp_path / "out.mp4").write_bytes(b"video")
 
@@ -140,6 +144,31 @@ def test_failed_queued_part_parks_with_part_suffix(tmp_path, monkeypatch):
                          video_path=qvideo, caption="cap") == 1
     assert (tmp_path / "outbox" / "s1_p2.mp4").read_bytes() == b"part2"
     assert (tmp_path / "outbox" / "s1_p2.txt").read_text(encoding="utf-8") == "cap"
+
+
+def test_uploader_prefers_logged_in_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROFILES_DIR", str(tmp_path / "profiles"))
+    # no profile dir -> cookies-file uploader (may raise on missing file)
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(True, "up")))
+    assert isinstance(main._make_uploader("redditregrets"), FakeUploader)
+    # profile dir exists -> the persistent-profile uploader wins
+    (tmp_path / "profiles" / "redditregrets").mkdir(parents=True)
+    up = main._make_uploader("redditregrets")
+    assert type(up).__name__ == "ProfileUploader"
+    assert up.account == "redditregrets"
+
+
+def test_park_part2_moves_queued_video_to_outbox(tmp_path, monkeypatch):
+    # part 1 failed: the sequel must not stay scheduled behind a missing opener
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    queue_part2(tmp_path, monkeypatch)
+    main._park_part2("s1")
+    assert (tmp_path / "outbox" / "s1_p2.mp4").read_bytes() == b"part2"
+    assert (tmp_path / "outbox" / "s1_p2.txt").read_text(
+        encoding="utf-8").startswith("A tale")
+    assert pending.next_entry(config.QUEUE_DIR, "redditregrets") is None
+    main._park_part2("s1")   # nothing queued now: a no-op, not a crash
 
 
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):

@@ -15,9 +15,9 @@ MAX_CHARS = 2500
 ASKREDDIT_MAX_ANSWERS = 8
 ASKREDDIT_MAX_ANSWER_CHARS = 350
 
-# artifact paths (repo-root relative; keep SRT_PATH plain — it goes inside an ffmpeg filter)
+# artifact paths (repo-root relative; keep CAPTIONS_PATH plain — it goes inside an ffmpeg filter)
 AUDIO_PATH = "output.mp3"
-SRT_PATH = "subtitles.srt"
+CAPTIONS_PATH = "captions.ass"
 INPUT_VID_PATH = "vid.mp4"          # single-clip fallback
 BACKGROUNDS_DIR = "assets/backgrounds"   # theme subfolders of clips (horror/, ...)
 CROSSFADE_S = 0.3                   # crossfade between chained background clips
@@ -33,6 +33,10 @@ AMBIENT_VOLUME = 0.12               # quiet enough to feel, not to fight the voi
 SPLIT_THRESHOLD_S = 100
 OUTPUT_PART2_PATH = "out_part2.mp4"
 QUEUE_DIR = "queue"                 # part 2 waits here for the next --post run
+
+# reddit-style hook card over the opening seconds
+HOOK_CARD_S = 3.0
+HOOK_CARD_PATH = "hook_card.png"
 
 VIDEO_BITRATE = "2500k"
 FORCE_STYLE = (
@@ -108,3 +112,4 @@ CAPTION_TITLE_CHARS = 90
 POST_JITTER_MAX_S = 900        # extra 0-15 min of human-irregular delay
 OUTBOX_DIR = "outbox"
 POST_LOG_PATH = "posts.jsonl"
+PROFILES_DIR = "profiles"      # persistent browser profiles (credentials!)

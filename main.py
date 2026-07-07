@@ -17,13 +17,59 @@ from sources.askreddit import AskRedditSource
 from sources.base import load_used_ids, record_used_id
 from sources.reddit_text import RedditTextSource
 from uploader.base import PostResult
-from uploader.tiktok_cookies import CookieUploader
+from uploader.tiktok_cookies import CookieUploader, missing_cookies_error
+from uploader.tiktok_profile import ProfileUploader
 
 
 def build_source(niche: str, preset, used_ids):
     if niche == "askreddit":
         return AskRedditSource(preset, used_ids)
     return RedditTextSource(niche, preset, used_ids)
+
+
+def _profile_dir(account_name: str) -> str:
+    return os.path.join(config.PROFILES_DIR, account_name)
+
+
+def _make_uploader(account_name: str):
+    """Prefer the logged-in browser profile (survives TikTok's device-bound
+    sessions); fall back to the cookies-file uploader."""
+    pdir = _profile_dir(account_name)
+    if os.path.isdir(pdir):
+        return ProfileUploader(pdir, account_name)
+    account = config.ACCOUNTS[account_name]
+    return CookieUploader(account.cookies_file, account_name)
+
+
+def _login(account_name: str) -> int:
+    """Open the account's persistent browser profile for a one-time manual
+    login; every later upload reuses it."""
+    from playwright.sync_api import sync_playwright
+    pdir = _profile_dir(account_name)
+    os.makedirs(pdir, exist_ok=True)
+    print(f"opening a browser — log into TikTok as '{account_name}' "
+          "(google login is fine), then leave the window open…")
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(pdir, channel="chrome",
+                                                   headless=False)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto("https://www.tiktok.com/login")
+        deadline = time.time() + 300
+        ok = False
+        while time.time() < deadline:
+            if any(c["name"] == "sessionid" for c in ctx.cookies()):
+                ok = True
+                break
+            time.sleep(2)
+        if ok:
+            time.sleep(3)   # let post-login storage writes land
+        ctx.close()
+    if ok:
+        print(f"logged in — profile saved under {pdir}; uploads for "
+              f"'{account_name}' now use it automatically")
+        return 0
+    print("no login detected within 5 minutes — run it again")
+    return 1
 
 
 def _publish(story, account_name: str, dry_run: bool,
@@ -50,7 +96,7 @@ def _publish(story, account_name: str, dry_run: bool,
     try:
         # a missing/locked cookies file raises in the constructor; catch it so
         # the rendered video is parked in the outbox, not stranded by a crash
-        uploader = CookieUploader(account.cookies_file, account_name)
+        uploader = _make_uploader(account_name)
         result = uploader.upload(video_path, caption)
     except Exception as exc:
         result = PostResult(False, f"{exc.__class__.__name__}: {exc}")
@@ -70,6 +116,21 @@ def _publish(story, account_name: str, dry_run: bool,
         return 1
     print(f"posted to {account_name}: {caption[:60]}")
     return 0
+
+
+def _park_part2(story_id) -> None:
+    """Part 1 didn't go out: pull part 2 from the queue into the outbox so
+    the scheduler can't post a sequel whose opener never appeared."""
+    entry = pending.pop(config.QUEUE_DIR, story_id)
+    if entry is None:
+        return
+    video_path, meta = entry
+    os.makedirs(config.OUTBOX_DIR, exist_ok=True)
+    parked = os.path.join(config.OUTBOX_DIR, os.path.basename(video_path))
+    shutil.move(video_path, parked)
+    Path(config.OUTBOX_DIR, f"{story_id}_p2.txt").write_text(
+        meta.get("caption", ""), encoding="utf-8")
+    print(f"part 1 failed — parked part 2 alongside it ({parked})")
 
 
 def _publish_queued(account_name: str, dry_run: bool):
@@ -103,16 +164,26 @@ def main() -> int:
                         help="account to post as (implies its niche)")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --post: render and caption, skip the upload")
+    parser.add_argument("--login", action="store_true",
+                        help="one-time manual TikTok login into the account's "
+                             "persistent browser profile")
     args = parser.parse_args()
+
+    if args.login:
+        if not args.account:
+            parser.error("--login requires --account")
+        return _login(args.account)
 
     if args.post:
         if not args.account:
             parser.error("--post requires --account")
         account = config.ACCOUNTS[args.account]
         niche = account.niche
-        if not args.dry_run and not os.path.exists(account.cookies_file):
-            print(f"error: cookies file {account.cookies_file} for "
-                  f"'{args.account}' missing — see README 'Cookie export'")
+        if (not args.dry_run
+                and not os.path.isdir(_profile_dir(args.account))
+                and not os.path.exists(account.cookies_file)):
+            print("error: " + missing_cookies_error(account.cookies_file,
+                                                    args.account))
             return 1
         if not args.dry_run:
             # human-irregular timing on top of Task Scheduler's random delay
@@ -172,7 +243,10 @@ def main() -> int:
                                  "account": args.account, "niche": niche,
                                  "title": story.title, "url": story.url,
                                  "caption": caption2})
-            return _publish(story, args.account, args.dry_run, part=1)
+            rc = _publish(story, args.account, args.dry_run, part=1)
+            if rc != 0 and not args.dry_run:
+                _park_part2(story.id)
+            return rc
         return _publish(story, args.account, args.dry_run)
     if result.split:
         print(f"done -> {config.OUTPUT_VID_PATH} + {config.OUTPUT_PART2_PATH}")

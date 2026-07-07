@@ -3,9 +3,11 @@
 *.wav
 out.mp4
 out_part*.mp4
+hook_card.png
 vid.mp4
 queue/
 *.srt
+*.ass
 *.tmp
 transcript.*
 state.json
@@ -17,6 +19,7 @@ larynx_venv/
 .pytest_cache/
 .superpowers/
 cookies/
+profiles/
 outbox/
 posts.jsonl
 assets/
