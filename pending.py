@@ -19,13 +19,14 @@ def enqueue(queue_dir, video_src, meta) -> str:
     return video_dst
 
 
-def next_entry(queue_dir, account):
-    """Oldest queued (video_path, meta) for `account`, or None."""
+def entries(queue_dir):
+    """All queued (video_path, meta), oldest first."""
     try:
         sidecars = [os.path.join(queue_dir, n) for n in os.listdir(queue_dir)
                     if n.endswith(".json")]
     except OSError:
-        return None
+        return []
+    out = []
     for path in sorted(sidecars, key=os.path.getmtime):
         try:
             with open(path, encoding="utf-8") as f:
@@ -33,7 +34,15 @@ def next_entry(queue_dir, account):
         except (OSError, ValueError):
             continue   # corrupt sidecar: skip, don't block the queue
         video = os.path.splitext(path)[0] + ".mp4"
-        if meta.get("account") == account and os.path.exists(video):
+        if os.path.exists(video):
+            out.append((video, meta))
+    return out
+
+
+def next_entry(queue_dir, account):
+    """Oldest queued (video_path, meta) for `account`, or None."""
+    for video, meta in entries(queue_dir):
+        if meta.get("account") == account:
             return video, meta
     return None
 

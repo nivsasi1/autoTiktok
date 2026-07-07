@@ -123,13 +123,18 @@ credentials: both folders are gitignored — keep it that way.
   real browser).
 
 ### Day to day
+- `python main.py --status` — one glance: per-account login state, queue,
+  outbox (with retry counts), last posts.
 - History: `posts.jsonl` (one line per attempt).
-- Failed uploads are parked in `outbox/<story_id>.mp4` + `.txt` (the caption) —
-  post them by hand, cookies probably need re-exporting.
-- A *missing* cookies file gives a clear named error before anything runs.
-  *Expired* cookies (file present but stale) surface as an upload failure —
-  the video is parked in `outbox/` and you re-export cookies and post it by
-  hand.
+- Failed uploads park in `outbox/` and **heal themselves**: each scheduled
+  `--post` run posts exactly one thing — a queued part 2 first, else the
+  oldest parked video (up to `MAX_UPLOAD_RETRIES` = 3 tries, part 1 always
+  before its part 2), else a fresh story. After 3 failed retries an entry
+  goes manual — `--status` flags it and the `.txt` next to it holds the
+  caption for posting by hand.
+- Login expired? `--status` shows it; re-run
+  `python main.py --login --account <name>` and the backlog drains on the
+  following runs.
 
 ## Roadmap
 

@@ -1,9 +1,11 @@
+import json
 import re
 import sys
 from types import SimpleNamespace
 
 import config
 import main
+import outbox
 import pending
 from uploader.base import PostResult
 from post_log import read_posts
@@ -169,6 +171,91 @@ def test_park_part2_moves_queued_video_to_outbox(tmp_path, monkeypatch):
         encoding="utf-8").startswith("A tale")
     assert pending.next_entry(config.QUEUE_DIR, "redditregrets") is None
     main._park_part2("s1")   # nothing queued now: a no-op, not a crash
+
+
+def park_failed_p1(tmp_path, account="redditregrets", attempts=0):
+    src = tmp_path / "failed.mp4"
+    src.write_bytes(b"parked")
+    return outbox.park(config.OUTBOX_DIR,
+                       str(src), {"story_id": "s7", "part": 1,
+                                  "account": account, "niche": "drama",
+                                  "title": "Parked tale", "url": "u",
+                                  "caption": "cap", "attempts": attempts})
+
+
+def post_argv(monkeypatch, *extra):
+    monkeypatch.setattr(config, "POST_JITTER_MAX_S", 0)
+    monkeypatch.setattr(
+        sys, "argv", ["main.py", "--post", "--account", "redditregrets",
+                      *extra])
+
+
+def test_outbox_retry_runs_before_fetching_new_story(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    parked = park_failed_p1(tmp_path)
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("k=v", encoding="utf-8")
+    monkeypatch.setattr(config.ACCOUNTS["redditregrets"], "cookies_file",
+                        str(cookies))
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(True, "up")))
+    monkeypatch.setattr(
+        main, "build_source",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fetched")))
+    post_argv(monkeypatch)
+    assert main.main() == 0
+    rec = read_posts(config.POST_LOG_PATH)[0]
+    assert rec["ok"] is True and rec["story_id"] == "s7"
+    assert not (tmp_path / "outbox" / "s7_p1.mp4").exists()   # cleared
+    assert parked not in [v for v, _ in outbox.entries(config.OUTBOX_DIR)]
+
+
+def test_outbox_retry_failure_bumps_attempts_and_keeps_video(tmp_path,
+                                                             monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    park_failed_p1(tmp_path, attempts=1)
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("k=v", encoding="utf-8")
+    monkeypatch.setattr(config.ACCOUNTS["redditregrets"], "cookies_file",
+                        str(cookies))
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(False, "boom")))
+    monkeypatch.setattr(
+        main, "build_source",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fetched")))
+    post_argv(monkeypatch)
+    assert main.main() == 1
+    sidecar = tmp_path / "outbox" / "s7_p1.json"
+    assert json.load(open(sidecar, encoding="utf-8"))["attempts"] == 2
+    assert (tmp_path / "outbox" / "s7_p1.mp4").exists()
+
+
+def test_outbox_dry_run_reports_but_changes_nothing(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    park_failed_p1(tmp_path)
+    monkeypatch.setattr(
+        main, "CookieUploader",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("constructed")))
+    monkeypatch.setattr(
+        main, "build_source",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fetched")))
+    post_argv(monkeypatch, "--dry-run")
+    assert main.main() == 0
+    sidecar = tmp_path / "outbox" / "s7_p1.json"
+    assert json.load(open(sidecar, encoding="utf-8"))["attempts"] == 0
+
+
+def test_status_smoke(tmp_path, monkeypatch, capsys):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    park_failed_p1(tmp_path, attempts=3)
+    queue_part2(tmp_path, monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--status"])
+    assert main.main() == 0
+    out = capsys.readouterr().out
+    assert "redditregrets" in out and "nosleeptonight" in out
+    assert "part 2 for redditregrets" in out
+    assert "retries exhausted" in out
+    assert "NO LOGIN" in out or "cookies file" in out or "profile" in out
 
 
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
