@@ -135,6 +135,11 @@ credentials: both folders are gitignored — keep it that way.
 - Login expired? `--status` shows it; re-run
   `python main.py --login --account <name>` and the backlog drains on the
   following runs.
+- **Email alerts**: set the `NOTIFY_*` vars in `.env` (see `.env.example`;
+  Gmail wants an app password) and you get a mail on every failed upload,
+  when a video exhausts its retries (action needed), and if a scheduled run
+  crashes. Unset = silently off. Test it with:
+  `python -c "import notify; print(notify.send_failure('test', 'hello'))"`
 
 ## Roadmap
 

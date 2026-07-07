@@ -108,6 +108,13 @@ HASHTAGS = {
     },
 }
 
+# failure emails (off until NOTIFY_* set in .env; gmail: use an app password)
+NOTIFY_EMAIL_TO = os.getenv("NOTIFY_EMAIL_TO", "")
+NOTIFY_SMTP_USER = os.getenv("NOTIFY_SMTP_USER", "")
+NOTIFY_SMTP_PASSWORD = os.getenv("NOTIFY_SMTP_PASSWORD", "")
+NOTIFY_SMTP_HOST = os.getenv("NOTIFY_SMTP_HOST", "smtp.gmail.com")
+NOTIFY_SMTP_PORT = int(os.getenv("NOTIFY_SMTP_PORT", "587"))
+
 CAPTION_TITLE_CHARS = 90
 POST_JITTER_MAX_S = 900        # extra 0-15 min of human-irregular delay
 OUTBOX_DIR = "outbox"

@@ -23,6 +23,8 @@ def redirect_paths(tmp_path, monkeypatch, with_video=True):
     monkeypatch.setattr(config, "QUEUE_DIR", str(tmp_path / "queue"))
     # nor a real logged-in browser profile (would bypass the fake uploader)
     monkeypatch.setattr(config, "PROFILES_DIR", str(tmp_path / "profiles"))
+    # and never send real failure emails from tests
+    monkeypatch.setattr(config, "NOTIFY_EMAIL_TO", "")
     if with_video:
         (tmp_path / "out.mp4").write_bytes(b"video")
 
@@ -159,6 +161,29 @@ def test_uploader_prefers_logged_in_profile(tmp_path, monkeypatch):
     up = main._make_uploader("redditregrets")
     assert type(up).__name__ == "ProfileUploader"
     assert up.account == "redditregrets"
+
+
+def test_upload_failure_sends_notification(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch)
+    sent = []
+    monkeypatch.setattr(main.notify, "send_failure",
+                        lambda subject, body: sent.append((subject, body)))
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(False, "boom")))
+    assert main._publish(story(), "redditregrets", dry_run=False) == 1
+    (subject, body), = sent
+    assert "redditregrets" in subject
+    assert "boom" in body and "A tale" in body
+
+
+def test_successful_upload_sends_no_notification(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.notify, "send_failure",
+        lambda *a: (_ for _ in ()).throw(AssertionError("emailed")))
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(True, "up")))
+    assert main._publish(story(), "redditregrets", dry_run=False) == 0
 
 
 def test_park_part2_moves_queued_video_to_outbox(tmp_path, monkeypatch):

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import config
 import metadata
+import notify
 import outbox
 import pending
 import pipeline
@@ -117,8 +118,14 @@ def _publish(story, account_name: str, dry_run: bool,
             print(f"upload failed ({result.detail}); video parked at {parked}"
                   f" — later --post runs retry it "
                   f"(up to {config.MAX_UPLOAD_RETRIES}x)")
+            plan = (f"parked at {parked} — later scheduled runs retry it "
+                    f"automatically (up to {config.MAX_UPLOAD_RETRIES}x).")
         else:
             print(f"upload failed ({result.detail})")
+            plan = "this was a retry of a parked video — see --status."
+        notify.send_failure(
+            f"upload failed for {account_name}",
+            f"{story.title}\n\nreason: {result.detail}\n\n{plan}")
         return 1
     print(f"posted to {account_name}: {caption[:60]}")
     return 0
@@ -149,6 +156,14 @@ def _publish_outbox(account_name: str, dry_run: bool):
         if attempt >= config.MAX_UPLOAD_RETRIES:
             print(f"retries exhausted for {os.path.basename(video_path)} — "
                   "post it by hand (see --status)")
+            notify.send_failure(
+                f"action needed: retries exhausted "
+                f"({os.path.basename(video_path)})",
+                f"{meta.get('title', '')}\n\nall "
+                f"{config.MAX_UPLOAD_RETRIES} automatic retries failed — "
+                f"post it by hand (caption sits next to the video in "
+                f"{config.OUTBOX_DIR}/). run `python main.py --status` "
+                "for the full picture.")
     return rc
 
 
@@ -340,4 +355,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        # a scheduled run that dies unseen is worse than the failure itself
+        import traceback
+        notify.send_failure("run crashed", traceback.format_exc())
+        raise
