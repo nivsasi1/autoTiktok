@@ -254,6 +254,9 @@ def main() -> int:
                         help="account to post as (implies its niche)")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --post: render and caption, skip the upload")
+    parser.add_argument("--now", action="store_true",
+                        help="with --post: skip the 0-15 min anti-bot delay "
+                             "(for watched manual runs)")
     parser.add_argument("--login", action="store_true",
                         help="one-time manual TikTok login into the account's "
                              "persistent browser profile")
@@ -282,9 +285,12 @@ def main() -> int:
                   + missing_cookies_error(account.cookies_file,
                                           args.account) + ")")
             return 1
-        if not args.dry_run:
+        if not args.dry_run and not args.now:
             # human-irregular timing on top of Task Scheduler's random delay
-            time.sleep(random.uniform(0, config.POST_JITTER_MAX_S))
+            delay = random.uniform(0, config.POST_JITTER_MAX_S)
+            print(f"jitter: waiting {delay / 60:.1f} min before posting "
+                  "(skip with --now)", flush=True)
+            time.sleep(delay)
         # a queued part 2 goes out before anything new is fetched/rendered,
         # then parked failures get their retry — one post per run either way
         queued_rc = _publish_queued(args.account, args.dry_run)

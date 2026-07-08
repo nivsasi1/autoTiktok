@@ -116,7 +116,10 @@ credentials: both folders are gitignored — keep it that way.
   shadowban recipe.
 - Then: `python main.py --post --account redditregrets --dry-run` (renders and
   shows the caption, uploads nothing).
-- Then 2-3 watched live posts: `python main.py --post --account redditregrets`.
+- Then 2-3 watched live posts:
+  `python main.py --post --account redditregrets --now`
+  (`--now` skips the random 0-15 min anti-bot delay that scheduled runs get —
+  without it the run sits silent for a while before posting).
 - Only then register the schedule:
   `powershell -ExecutionPolicy Bypass -File scripts/register_tasks.ps1`
   (`-Remove` unregisters).

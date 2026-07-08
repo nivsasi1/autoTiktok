@@ -295,6 +295,43 @@ def test_status_smoke(tmp_path, monkeypatch, capsys):
     assert "NO LOGIN" in out or "cookies file" in out or "profile" in out
 
 
+def live_post_setup(tmp_path, monkeypatch):
+    """A queued part 2 + working cookies: shortest path to a real --post run."""
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    queue_part2(tmp_path, monkeypatch)
+    cookies = tmp_path / "c.txt"
+    cookies.write_text("k=v", encoding="utf-8")
+    monkeypatch.setattr(config.ACCOUNTS["redditregrets"], "cookies_file",
+                        str(cookies))
+    monkeypatch.setattr(main, "CookieUploader",
+                        lambda *a, **kw: FakeUploader(PostResult(True, "up")))
+
+
+def test_post_announces_jitter_before_sleeping(tmp_path, monkeypatch, capsys):
+    # a silent 0-15 min sleep looks like a hang from the terminal
+    live_post_setup(tmp_path, monkeypatch)
+    slept = []
+    monkeypatch.setattr(main.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(main.random, "uniform", lambda a, b: 90.0)
+    monkeypatch.setattr(
+        sys, "argv", ["main.py", "--post", "--account", "redditregrets"])
+    assert main.main() == 0
+    assert slept == [90.0]
+    out = capsys.readouterr().out
+    assert "1.5 min" in out and "--now" in out
+
+
+def test_now_flag_skips_jitter(tmp_path, monkeypatch):
+    live_post_setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        main.time, "sleep",
+        lambda s: (_ for _ in ()).throw(AssertionError("slept")))
+    monkeypatch.setattr(
+        sys, "argv",
+        ["main.py", "--post", "--account", "redditregrets", "--now"])
+    assert main.main() == 0
+
+
 def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
     # a --post run that finds nothing still records the attempt, so posts.jsonl
     # tells a dry subreddit day apart from a scheduler that never fired
