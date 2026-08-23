@@ -353,3 +353,42 @@ def test_post_mode_logs_when_no_story(tmp_path, monkeypatch):
     assert posts[0]["ok"] is None
     assert posts[0]["detail"] == "no story"
     assert posts[0]["account"] == "redditregrets"
+
+
+def test_account_lock_blocks_concurrent_live_posts(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    lock = main._acquire_account_lock("redditregrets")
+    assert lock and lock.endswith("redditregrets.lock")
+    assert main._acquire_account_lock("redditregrets") is None   # held
+    assert main._acquire_account_lock("nosleeptonight")          # other ok
+    main._release_account_lock(lock)
+    assert main._acquire_account_lock("redditregrets")           # free again
+
+
+def test_stale_account_lock_is_reclaimed(tmp_path, monkeypatch):
+    import os
+    import time as _time
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    lock = main._acquire_account_lock("redditregrets")
+    old = _time.time() - 3 * 3600
+    os.utime(lock, (old, old))                      # owner died 3h ago
+    assert main._acquire_account_lock("redditregrets") == lock
+
+
+def test_concurrent_live_post_skips_slot_and_logs(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    main._acquire_account_lock("redditregrets")     # someone else is posting
+    monkeypatch.setattr(
+        main, "_run", lambda a: (_ for _ in ()).throw(AssertionError("ran")))
+    post_argv(monkeypatch)
+    assert main.main() == 0
+    rec = read_posts(config.POST_LOG_PATH)[0]
+    assert rec["detail"] == "skipped: concurrent run"
+
+
+def test_lock_released_after_run(tmp_path, monkeypatch):
+    redirect_paths(tmp_path, monkeypatch, with_video=False)
+    monkeypatch.setattr(main, "_run", lambda a: 0)
+    post_argv(monkeypatch)
+    assert main.main() == 0
+    assert main._acquire_account_lock("redditregrets")  # lock was released

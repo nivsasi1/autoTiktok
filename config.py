@@ -116,7 +116,8 @@ NOTIFY_SMTP_HOST = os.getenv("NOTIFY_SMTP_HOST", "smtp.gmail.com")
 NOTIFY_SMTP_PORT = int(os.getenv("NOTIFY_SMTP_PORT", "587"))
 
 CAPTION_TITLE_CHARS = 90
-POST_JITTER_MAX_S = 900        # extra 0-15 min of human-irregular delay
+POST_JITTER_MAX_S = 2400       # 0-40 min human-irregular delay (the only drift: a
+                               # task-level RandomDelay breaks missed-run catch-up)
 OUTBOX_DIR = "outbox"
 MAX_UPLOAD_RETRIES = 3         # later runs auto-retry parked videos this often
 POST_LOG_PATH = "posts.jsonl"

@@ -123,9 +123,12 @@ credentials: both folders are gitignored — keep it that way.
 - Only then register the schedule:
   `powershell -ExecutionPolicy Bypass -File scripts/register_tasks.ps1`
   (`-Remove` unregisters).
-  Note: scheduled runs require the machine on and this user logged in, and a
-  Chrome window will briefly open during each upload (the automation drives a
-  real browser).
+  Note: scheduled runs need this user logged in and the machine on or
+  **asleep** — tasks are registered with WakeToRun, so a sleeping PC wakes
+  itself to post; a shut-down PC can't (missed slots then catch up at the
+  next boot, at most one per account at a time). So: sleep, don't shut down.
+  A Chrome window will briefly open during each upload (the automation drives
+  a real browser).
 
 ### Day to day
 - `python main.py --status` — one glance: per-account login state, queue,
