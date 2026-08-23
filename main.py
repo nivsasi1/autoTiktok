@@ -195,6 +195,37 @@ def _publish_queued(account_name: str, dry_run: bool):
     return rc
 
 
+def _acquire_account_lock(account_name: str):
+    """One live --post per account at a time: after a day powered off, Task
+    Scheduler catches up BOTH of an account's missed slots at once, and two
+    uploads can't share one browser profile. Returns the lock path, or None
+    when another run holds it (stale locks > 2h are reclaimed)."""
+    os.makedirs(config.PROFILES_DIR, exist_ok=True)
+    path = os.path.join(config.PROFILES_DIR, f"{account_name}.lock")
+    for _ in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return path
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(path) > 2 * 3600:
+                    os.remove(path)      # stale: owner died without cleanup
+                    continue
+            except OSError:
+                pass
+            return None
+    return None
+
+
+def _release_account_lock(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _status() -> int:
     """One-glance system state: auth, queue, outbox, recent posts."""
     print("accounts:")
@@ -255,7 +286,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="with --post: render and caption, skip the upload")
     parser.add_argument("--now", action="store_true",
-                        help="with --post: skip the 0-15 min anti-bot delay "
+                        help="with --post: skip the 0-40 min anti-bot delay "
                              "(for watched manual runs)")
     parser.add_argument("--login", action="store_true",
                         help="one-time manual TikTok login into the account's "
@@ -271,10 +302,34 @@ def main() -> int:
         if not args.account:
             parser.error("--login requires --account")
         return _login(args.account)
+    if args.post and not args.account:
+        parser.error("--post requires --account")
 
+    lock = None
+    if args.post and not args.dry_run:
+        lock = _acquire_account_lock(args.account)
+        if lock is None:
+            print(f"another --post run for '{args.account}' is active — "
+                  "skipping this slot")
+            try:
+                post_log.append_post(config.POST_LOG_PATH, {
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    "account": args.account,
+                    "niche": config.ACCOUNTS[args.account].niche,
+                    "story_id": None, "ok": None,
+                    "detail": "skipped: concurrent run"})
+            except OSError as exc:
+                print(f"warning: couldn't write {config.POST_LOG_PATH} ({exc})")
+            return 0
+    try:
+        return _run(args)
+    finally:
+        if lock:
+            _release_account_lock(lock)
+
+
+def _run(args) -> int:
     if args.post:
-        if not args.account:
-            parser.error("--post requires --account")
         account = config.ACCOUNTS[args.account]
         niche = account.niche
         if (not args.dry_run

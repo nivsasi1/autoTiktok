@@ -32,10 +32,13 @@ foreach ($t in $tasks) {
         -Argument "main.py --post --account $($t.Account)" `
         -WorkingDirectory $repo
     $trigger = New-ScheduledTaskTrigger -Daily -At $t.At
-    $trigger.RandomDelay = "PT40M"   # 0-40 min drift, human-looking
-    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
+    # no RandomDelay here: it defeats StartWhenAvailable's missed-run catch-up
+    # (seen live 2026-08-23); main.py's POST_JITTER_MAX_S supplies the drift.
+    # WakeToRun: a sleeping PC wakes itself to post (shutdown still can't).
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
+        -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $t.Name -TaskPath $taskPath -Action $action `
         -Trigger $trigger -Settings $settings -Force | Out-Null
-    Write-Host "registered $($t.Name) at $($t.At) (+0-40min random)"
+    Write-Host "registered $($t.Name) at $($t.At) (+0-40min in-process jitter)"
 }
 Write-Host "done -- check with: Get-ScheduledTask -TaskPath '\autoTiktok\'"

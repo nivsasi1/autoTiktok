@@ -17,4 +17,4 @@ def test_posting_paths_defined():
     assert config.OUTBOX_DIR == "outbox"
     assert config.POST_LOG_PATH == "posts.jsonl"
     assert config.CAPTION_TITLE_CHARS == 90
-    assert config.POST_JITTER_MAX_S == 900
+    assert config.POST_JITTER_MAX_S == 2400   # the only posting drift now
